@@ -7,7 +7,7 @@ Calculates sales incentives from a CSV of sales records.
 pip install -r requirements.txt
 python incentive.py data/sample_sales.csv
 ```
-Results: `output/incentive_monthly_<year>.csv` (incentive per Saleman by month) and `output/incentive_detail_<year>.csv` (per invoice line, for audit).
+Results: `output/sale_summary_<year>.csv` (incentive per Saleman by month) and `output/raw_data_<year>.csv` (original rows of that year + `Type` column: NC / OCNP / OCOP).
 
 ## Configure
 Edit `config.yaml` to set the CSV column names, lookback years and rates.

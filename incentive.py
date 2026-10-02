@@ -41,15 +41,17 @@ def row_date(r, cols):
 def load_sales(path, cols):
     rows = []
     with open(path, encoding="utf-8-sig", newline="") as f:
-        for r in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        for r in reader:
             rows.append({
+                "raw": r,
                 "date": row_date(r, cols),
                 "salesperson": r[cols["salesperson"]].strip(),
                 "customer": r[cols["customer"]].strip(),
                 "pline": r[cols["pline"]].strip(),
                 "amount": float(str(r[cols["amount"]]).replace(",", "") or 0),
             })
-    return rows
+    return rows, reader.fieldnames
 
 
 def classify(rows, year, lookback):
@@ -95,7 +97,7 @@ def main():
     a = p.parse_args()
 
     cfg = load_config(a.config)
-    rows = load_sales(a.sales_csv, cfg["columns"])
+    rows, header = load_sales(a.sales_csv, cfg["columns"])
     excluded = set(cfg.get("exclude_plines") or [])
     rows = [r for r in rows if r["pline"] not in excluded]
     if not rows:
@@ -117,15 +119,14 @@ def main():
     out = Path(a.outdir)
     clear_output(out)
 
-    # รายละเอียดทีละบิล (ไว้ตรวจสอบ)
-    with open(out / f"incentive_detail_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", "salesperson", "customer", "pline", "amount", "category", "rate", "incentive"])
-        for d in sorted(detail, key=lambda x: (x["salesperson"], x["date"])):
-            w.writerow([d["date"].strftime("%Y-%m-%d"), d["salesperson"], d["customer"], d["pline"],
-                        d["amount"], d["category"], d["rate"], d["incentive"]])
+    # File 2: raw data ของปีที่คำนวณ + คอลัมน์ Type
+    with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(header) + ["Type"])
+        w.writeheader()
+        for d in detail:
+            w.writerow({**d["raw"], "Type": d["category"]})
 
-    # สรุป incentive ต่อ Saleman แยกรายเดือน
+    # File 1: Sale Summary — incentive ต่อ Saleman แยกรายเดือน
     months = list(range(1, 13))
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     monthly = defaultdict(lambda: [0.0] * 12)
@@ -133,7 +134,7 @@ def main():
         monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
     names = sorted(monthly)
     col_total = [sum(monthly[n][m - 1] for n in names) for m in months]
-    with open(out / f"incentive_monthly_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
+    with open(out / f"sale_summary_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Saleman"] + month_names + ["Total"])
         for n in names:
