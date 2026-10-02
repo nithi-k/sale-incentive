@@ -1,10 +1,16 @@
-"""Sales incentive calculator.
+"""คำนวณ Sales Incentive จากไฟล์ CSV ยอดขาย
 
-Usage: python incentive.py data/sales.csv [--config config.yaml] [--out output/incentive.csv]
+ประเภทยอดขาย (ปีที่คำนวณ = Y, เช็คย้อนหลังปี Y-1 ถึง Y-lookback):
+  NC   ลูกค้าใหม่              : ลูกค้าไม่มีบิลเลยในช่วงย้อนหลัง
+  OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า แต่ไม่เคยซื้อ Pline นี้ในช่วงย้อนหลัง
+  OCOP ลูกค้าเก่า + สินค้าเก่า : นอกเหนือจากนั้น
+
+Usage: python incentive.py data/sales.csv [--year 2026] [--config config.yaml]
 """
 import argparse
 import csv
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -15,44 +21,103 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
-def rate_for(total, tiers):
-    rate = 0.0
-    for tier in sorted(tiers, key=lambda t: t["min"]):
-        if total >= tier["min"]:
-            rate = tier["rate"]
-    return rate
+def parse_date(s):
+    s = s.strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    raise ValueError(f"อ่านวันที่ไม่ได้: {s!r}")
 
 
-def calculate(sales_csv, cfg):
-    cols = cfg["columns"]
-    totals = defaultdict(float)
-    with open(sales_csv, encoding="utf-8-sig", newline="") as f:
-        for row in csv.DictReader(f):
-            amount = float(str(row[cols["amount"]]).replace(",", "") or 0)
-            totals[row[cols["salesperson"]].strip()] += amount
-    results = []
-    for person, total in sorted(totals.items()):
-        rate = rate_for(total, cfg["tiers"])
-        results.append({"salesperson": person, "total_sales": round(total, 2),
-                        "rate": rate, "incentive": round(total * rate, 2)})
-    return results
+def load_sales(path, cols):
+    rows = []
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            rows.append({
+                "date": parse_date(r[cols["date"]]),
+                "salesperson": r[cols["salesperson"]].strip(),
+                "customer": r[cols["customer"]].strip(),
+                "pline": r[cols["pline"]].strip(),
+                "amount": float(str(r[cols["amount"]]).replace(",", "") or 0),
+            })
+    return rows
+
+
+def classify(rows, year, lookback):
+    """เพิ่ม category ให้ทุกบรรทัดของปี `year`"""
+    hist_years = set(range(year - lookback, year))
+    hist_customers, hist_cust_pline = set(), set()
+    for r in rows:
+        if r["date"].year in hist_years:
+            hist_customers.add(r["customer"])
+            hist_cust_pline.add((r["customer"], r["pline"]))
+    out = []
+    for r in rows:
+        if r["date"].year != year:
+            continue
+        if r["customer"] not in hist_customers:
+            cat = "NC"
+        elif (r["customer"], r["pline"]) not in hist_cust_pline:
+            cat = "OCNP"
+        else:
+            cat = "OCOP"
+        out.append({**r, "category": cat})
+    return out
 
 
 def main():
-    p = argparse.ArgumentParser(description="Calculate sales incentives from a CSV")
+    p = argparse.ArgumentParser(description="คำนวณ Sales Incentive")
     p.add_argument("sales_csv")
+    p.add_argument("--year", type=int, help="ปีที่คำนวณ (ค่าเริ่มต้น = ปีล่าสุดในไฟล์)")
     p.add_argument("--config", default="config.yaml")
-    p.add_argument("--out", default="output/incentive.csv")
+    p.add_argument("--outdir", default="output")
     a = p.parse_args()
-    results = calculate(a.sales_csv, load_config(a.config))
-    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    with open(a.out, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["salesperson", "total_sales", "rate", "incentive"])
-        w.writeheader()
-        w.writerows(results)
-    for r in results:
-        print(f"{r['salesperson']:<15} {r['total_sales']:>12,.2f}  {r['rate']:.1%}  {r['incentive']:>10,.2f}")
-    print(f"\nSaved to {a.out}")
+
+    cfg = load_config(a.config)
+    rows = load_sales(a.sales_csv, cfg["columns"])
+    year = a.year or max(r["date"].year for r in rows)
+    lookback = cfg.get("lookback_years", 2)
+    years_in_file = {r["date"].year for r in rows}
+    missing = [y for y in range(year - lookback, year) if y not in years_in_file]
+    if missing:
+        print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
+
+    rates = cfg["rates"]
+    detail = classify(rows, year, lookback)
+    for d in detail:
+        d["rate"] = rates[d["category"]]
+        d["incentive"] = round(d["amount"] * d["rate"], 2)
+
+    # สรุปต่อเซลส์
+    cats = ["NC", "OCNP", "OCOP"]
+    summary = defaultdict(lambda: {**{f"{c}_sales": 0.0 for c in cats}, "incentive": 0.0})
+    for d in detail:
+        s = summary[d["salesperson"]]
+        s[f"{d['category']}_sales"] += d["amount"]
+        s["incentive"] += d["incentive"]
+
+    out = Path(a.outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    with open(out / f"incentive_detail_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "salesperson", "customer", "pline", "amount", "category", "rate", "incentive"])
+        for d in sorted(detail, key=lambda x: (x["salesperson"], x["date"])):
+            w.writerow([d["date"].strftime("%Y-%m-%d"), d["salesperson"], d["customer"], d["pline"],
+                        d["amount"], d["category"], d["rate"], d["incentive"]])
+    with open(out / f"incentive_summary_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["salesperson"] + [f"{c}_sales" for c in cats] + ["total_sales", "incentive"])
+        for name, s in sorted(summary.items()):
+            total = sum(s[f"{c}_sales"] for c in cats)
+            w.writerow([name] + [round(s[f"{c}_sales"], 2) for c in cats] + [round(total, 2), round(s["incentive"], 2)])
+
+    print(f"Incentive ปี {year} (เช็คย้อนหลังปี {year - lookback}-{year - 1})\n")
+    print(f"{'Sales':<12}{'NC':>12}{'OCNP':>12}{'OCOP':>12}{'Incentive':>12}")
+    for name, s in sorted(summary.items()):
+        print(f"{name:<12}" + "".join(f"{s[c + '_sales']:>12,.0f}" for c in cats) + f"{s['incentive']:>12,.2f}")
+    print(f"\nบันทึกไฟล์ที่ {out}/")
 
 
 if __name__ == "__main__":

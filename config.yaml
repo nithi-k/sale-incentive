@@ -1,13 +1,15 @@
-# Incentive rules - placeholder values, replace with CBG's actual policy
+# ชื่อคอลัมน์ในไฟล์ CSV (แก้ให้ตรงกับไฟล์จริง)
 columns:
+  date: date            # วันที่เปิดบิล (YYYY-MM-DD)
   salesperson: salesperson
-  amount: amount
-  product_line: product_line
-  date: date
+  customer: customer    # รหัสลูกค้า
+  pline: pline          # กลุ่มสินค้า (Pline)
+  amount: amount        # ยอดขายก่อน VAT
 
-# Tiered rate on each salesperson's total sales for the period (THB)
-tiers:
-  - {min: 0,       rate: 0.00}
-  - {min: 100000,  rate: 0.01}
-  - {min: 300000,  rate: 0.02}
-  - {min: 500000,  rate: 0.03}
+# จำนวนปีย้อนหลังที่ใช้เช็คลูกค้าใหม่ / สินค้าใหม่ (ไม่นับปีที่คำนวณ)
+lookback_years: 2
+
+rates:
+  NC: 0.03     # ลูกค้าใหม่
+  OCNP: 0.01   # ลูกค้าเก่า + สินค้าใหม่
+  OCOP: 0.005  # ลูกค้าเก่า + สินค้าเก่า

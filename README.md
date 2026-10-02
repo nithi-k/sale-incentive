@@ -7,10 +7,18 @@ Calculates sales incentives from a CSV of sales records.
 pip install -r requirements.txt
 python incentive.py data/sample_sales.csv
 ```
-Results are written to `output/incentive.csv`.
+Results: `output/incentive_summary_<year>.csv` and `output/incentive_detail_<year>.csv`.
 
 ## Configure
-Edit `config.yaml` to set the CSV column names and incentive tiers.
+Edit `config.yaml` to set the CSV column names, lookback years and rates.
+
+| Category | Rule | Rate |
+|---|---|---|
+| NC | Customer with no bills in the previous 2 calendar years | 3% |
+| OCNP | Existing customer, Pline not bought in the previous 2 years | 1% |
+| OCOP | Existing customer, existing Pline | 0.5% |
+
+Amounts are before VAT. Use `--year 2026` to pick the year (default: latest year in the file).
 
 ## Data
 Put real sales CSVs in `data/`. They are git-ignored and never committed.
