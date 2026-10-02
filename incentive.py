@@ -9,6 +9,7 @@ Usage: python incentive.py data/sales.csv [--year 2026] [--config config.yaml]
 """
 import argparse
 import csv
+import shutil
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -73,6 +74,18 @@ def classify(rows, year, lookback):
     return out
 
 
+def clear_output(out):
+    """ลบทุกอย่างในโฟลเดอร์ output ก่อนรัน (กันลบโฟลเดอร์โปรเจกต์หรือโฟลเดอร์แม่โดยไม่ตั้งใจ)"""
+    out = out.resolve()
+    cwd = Path.cwd().resolve()
+    if out == cwd or out in cwd.parents or out == Path.home().resolve():
+        raise SystemExit(f"ไม่ลบ {out} — outdir ต้องเป็นโฟลเดอร์ย่อยสำหรับผลลัพธ์เท่านั้น")
+    if out.exists():
+        for item in out.iterdir():
+            shutil.rmtree(item) if item.is_dir() else item.unlink()
+    out.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     p = argparse.ArgumentParser(description="คำนวณ Sales Incentive")
     p.add_argument("sales_csv")
@@ -110,7 +123,7 @@ def main():
         s["incentive"] += d["incentive"]
 
     out = Path(a.outdir)
-    out.mkdir(parents=True, exist_ok=True)
+    clear_output(out)
     with open(out / f"incentive_detail_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", "salesperson", "customer", "pline", "amount", "category", "rate", "incentive"])
