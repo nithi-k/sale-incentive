@@ -114,33 +114,37 @@ def main():
         d["rate"] = rates[d["category"]]
         d["incentive"] = round(d["amount"] * d["rate"], 2)
 
-    # สรุปต่อเซลส์
-    cats = ["NC", "OCNP", "OCOP"]
-    summary = defaultdict(lambda: {**{f"{c}_sales": 0.0 for c in cats}, "incentive": 0.0})
-    for d in detail:
-        s = summary[d["salesperson"]]
-        s[f"{d['category']}_sales"] += d["amount"]
-        s["incentive"] += d["incentive"]
-
     out = Path(a.outdir)
     clear_output(out)
+
+    # รายละเอียดทีละบิล (ไว้ตรวจสอบ)
     with open(out / f"incentive_detail_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", "salesperson", "customer", "pline", "amount", "category", "rate", "incentive"])
         for d in sorted(detail, key=lambda x: (x["salesperson"], x["date"])):
             w.writerow([d["date"].strftime("%Y-%m-%d"), d["salesperson"], d["customer"], d["pline"],
                         d["amount"], d["category"], d["rate"], d["incentive"]])
-    with open(out / f"incentive_summary_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
+
+    # สรุป incentive ต่อ Saleman แยกรายเดือน
+    months = list(range(1, 13))
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    monthly = defaultdict(lambda: [0.0] * 12)
+    for d in detail:
+        monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
+    names = sorted(monthly)
+    col_total = [sum(monthly[n][m - 1] for n in names) for m in months]
+    with open(out / f"incentive_monthly_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["salesperson"] + [f"{c}_sales" for c in cats] + ["total_sales", "incentive"])
-        for name, s in sorted(summary.items()):
-            total = sum(s[f"{c}_sales"] for c in cats)
-            w.writerow([name] + [round(s[f"{c}_sales"], 2) for c in cats] + [round(total, 2), round(s["incentive"], 2)])
+        w.writerow(["Saleman"] + month_names + ["Total"])
+        for n in names:
+            w.writerow([n] + [round(v, 2) for v in monthly[n]] + [round(sum(monthly[n]), 2)])
+        w.writerow(["Total"] + [round(v, 2) for v in col_total] + [round(sum(col_total), 2)])
 
     print(f"Incentive ปี {year} (เช็คย้อนหลังปี {year - lookback}-{year - 1})\n")
-    print(f"{'Sales':<12}{'NC':>12}{'OCNP':>12}{'OCOP':>12}{'Incentive':>12}")
-    for name, s in sorted(summary.items()):
-        print(f"{name:<12}" + "".join(f"{s[c + '_sales']:>12,.0f}" for c in cats) + f"{s['incentive']:>12,.2f}")
+    print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in month_names) + f"{'Total':>11}")
+    for n in names + ["Total"]:
+        vals = col_total if n == "Total" else monthly[n]
+        print(f"{n:<10}" + "".join(f"{v:>9,.0f}" for v in vals) + f"{sum(vals):>11,.2f}")
     print(f"\nบันทึกไฟล์ที่ {out}/")
 
 
