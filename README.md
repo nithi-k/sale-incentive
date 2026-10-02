@@ -21,4 +21,4 @@ Edit `config.yaml` to set the CSV column names, lookback years and rates.
 Amounts are before VAT. Use `--year 2026` to pick the year (default: latest year in the file).
 
 ## Data
-Put real sales CSVs in `data/`. They are git-ignored and never committed.
+Put real sales files (CSV or Excel .xlsx) in `data/`. They are git-ignored and never committed.

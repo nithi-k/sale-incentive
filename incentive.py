@@ -5,7 +5,7 @@
   OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า แต่ไม่เคยซื้อ Pline นี้ในช่วงย้อนหลัง
   OCOP ลูกค้าเก่า + สินค้าเก่า : นอกเหนือจากนั้น
 
-Usage: python incentive.py data/sales.csv [--year 2026] [--config config.yaml]
+Usage: python incentive.py data/sales.csv (หรือ .xlsx) [--year 2026] [--config config.yaml]
 """
 import argparse
 import csv
@@ -34,24 +34,49 @@ def parse_date(s):
 
 def row_date(r, cols):
     if "date" in cols:
-        return parse_date(r[cols["date"]])
-    return datetime(int(r[cols["year"]]), int(r[cols["month"]]), int(r[cols["day"]]))
+        v = r[cols["date"]]
+        return v if isinstance(v, datetime) else parse_date(cell_str(v))
+    return datetime(int(float(r[cols["year"]])), int(float(r[cols["month"]])), int(float(r[cols["day"]])))
+
+
+def cell_str(v):
+    """แปลงค่าจาก CSV/Excel เป็นข้อความ (เช่น 530011.0 -> '530011')"""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return str(v).strip()
+
+
+def read_table(path):
+    """อ่าน CSV หรือ Excel (.xlsx) คืนค่า (header, list ของ dict)"""
+    if Path(path).suffix.lower() in (".xlsx", ".xlsm"):
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        it = ws.iter_rows(values_only=True)
+        header = [cell_str(h) for h in next(it)]
+        rows = [dict(zip(header, r)) for r in it if any(v is not None for v in r)]
+        wb.close()
+        return header, rows
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        return reader.fieldnames, list(reader)
 
 
 def load_sales(path, cols):
+    header, raw_rows = read_table(path)
     rows = []
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            rows.append({
-                "raw": r,
-                "date": row_date(r, cols),
-                "salesperson": r[cols["salesperson"]].strip(),
-                "customer": r[cols["customer"]].strip(),
-                "pline": r[cols["pline"]].strip(),
-                "amount": float(str(r[cols["amount"]]).replace(",", "") or 0),
-            })
-    return rows, reader.fieldnames
+    for r in raw_rows:
+        rows.append({
+            "raw": r,
+            "date": row_date(r, cols),
+            "salesperson": cell_str(r[cols["salesperson"]]),
+            "customer": cell_str(r[cols["customer"]]),
+            "pline": cell_str(r[cols["pline"]]),
+            "amount": float(cell_str(r[cols["amount"]]).replace(",", "") or 0),
+        })
+    return rows, header
 
 
 def classify(rows, year, lookback):
