@@ -1,4 +1,4 @@
-# ชื่อคอลัมน์ในไฟล์ CSV (ตามรูปแบบไฟล์จากระบบ)
+# ชื่อคอลัมน์ในไฟล์ยอดขาย (CSV หรือ Excel)
 columns:
   day: Day
   month: Month
@@ -6,7 +6,14 @@ columns:
   salesperson: Saleman
   customer: Customer No.
   pline: P-line
-  amount: Net Price (THB)   # ยอดก่อน VAT (Total Net Price = รวม VAT 7%)
+  amount: Net Price (THB)   # ยอดก่อน VAT
+  margin: PGROSS            # Margin ของแต่ละแถว
+
+# รูปแบบค่าในคอลัมน์ margin:
+#   percent = 25 หมายถึง 25%
+#   ratio   = 0.25 หมายถึง 25%
+#   amount  = กำไรขั้นต้นเป็นบาท (คิด % จาก amount)
+margin_type: percent
 
 # P-line ที่ไม่นับเป็นยอดขาย (ถ้ามี) เช่น [XXX, YYY]
 exclude_plines: []
@@ -14,7 +21,5 @@ exclude_plines: []
 # จำนวนปีย้อนหลังที่ใช้เช็คลูกค้าใหม่ / สินค้าใหม่ (ไม่นับปีที่คำนวณ)
 lookback_years: 2
 
-rates:
-  NC: 0.03     # ลูกค้าใหม่
-  OCNP: 0.01   # ลูกค้าเก่า + สินค้าใหม่
-  OCOP: 0.005  # ลูกค้าเก่า + สินค้าเก่า
+# ไฟล์อัตรา Incentive (Type x Margin) — กรอกช่องสีเหลืองให้ครบก่อนรัน
+rates_file: rates.xlsx
