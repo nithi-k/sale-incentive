@@ -75,6 +75,7 @@ def load_sales(path, cols):
             "customer": cell_str(r[cols["customer"]]),
             "pline": cell_str(r[cols["pline"]]),
             "amount": float(cell_str(r[cols["amount"]]).replace(",", "") or 0),
+            "margin_raw": cell_str(r.get(cols["margin"])) if "margin" in cols else "",
         })
     return rows, header
 
@@ -99,6 +100,86 @@ def classify(rows, year, lookback):
             cat = "OCOP"
         out.append({**r, "category": cat})
     return out
+
+
+CATEGORIES = ["OCOP", "OCNP", "NC"]
+
+
+def load_rates(path):
+    """อ่าน rates.xlsx: ช่วง Margin (ตั้งแต่ ≥ / น้อยกว่า <) และอัตราของแต่ละ Type
+    คืนค่า list ของ band: {label, lo, hi, rates{Type: rate}}"""
+    import openpyxl
+    if not Path(path).exists():
+        raise SystemExit(f"ไม่พบไฟล์อัตรา {path} — สร้างด้วย: python make_rates_template.py")
+    ws = openpyxl.load_workbook(path, data_only=True).worksheets[0]
+    # หาแถวตามป้ายในคอลัมน์ A
+    row_of = {}
+    for r in range(1, ws.max_row + 1):
+        v = cell_str(ws.cell(row=r, column=1).value)
+        if v:
+            row_of[v] = r
+    label_row = row_of.get("TYPE/MARGIN")
+    lo_row = next((r for k, r in row_of.items() if k.startswith("Margin") and "≥" in k), None)
+    hi_row = next((r for k, r in row_of.items() if k.startswith("Margin") and "<" in k), None)
+    if not all([label_row, lo_row, hi_row] + [row_of.get(c) for c in CATEGORIES]):
+        raise SystemExit(f"รูปแบบ {path} ไม่ถูกต้อง — สร้างใหม่ด้วย make_rates_template.py")
+
+    cols = []
+    c = 2
+    while cell_str(ws.cell(row=label_row, column=c).value):
+        cols.append(c)
+        c += 1
+    if not cols:
+        raise SystemExit(f"{path}: ไม่มีช่วง Margin")
+
+    def num(r, c):
+        v = ws.cell(row=r, column=c).value
+        if v is None or cell_str(v) == "":
+            return None
+        if isinstance(v, str):
+            v = v.strip().rstrip("%")
+            return float(v) / 100
+        return float(v)
+
+    errors, bands = [], []
+    for i, c in enumerate(cols):
+        col = ws.cell(row=label_row, column=c).column_letter
+        label = cell_str(ws.cell(row=label_row, column=c).value)
+        lo, hi = num(lo_row, c), num(hi_row, c)
+        if lo is None and i > 0:
+            errors.append(f"{col}{lo_row} (Margin ตั้งแต่ ของช่วง {label})")
+        if hi is None and i < len(cols) - 1:
+            errors.append(f"{col}{hi_row} (Margin น้อยกว่า ของช่วง {label})")
+        rates = {}
+        for cat in CATEGORIES:
+            v = num(row_of[cat], c)
+            if v is None:
+                errors.append(f"{col}{row_of[cat]} ({cat} ช่วง {label})")
+            rates[cat] = v
+        bands.append({"label": label, "lo": lo, "hi": hi, "rates": rates})
+    if errors:
+        raise SystemExit(f"❌ กรอก {path} ยังไม่ครบ — ช่องที่ว่าง:\n  " + "\n  ".join(errors))
+    for b in bands:
+        if b["lo"] is not None and b["hi"] is not None and b["lo"] >= b["hi"]:
+            raise SystemExit(f"❌ {path}: ช่วง {b['label']} — 'ตั้งแต่' ต้องน้อยกว่า 'น้อยกว่า'")
+    return bands
+
+
+def to_margin(raw, amount, mtype):
+    """แปลงค่า margin ของแถวเป็นสัดส่วน (0.25 = 25%)"""
+    if raw == "":
+        return None
+    v = float(raw.replace(",", "").rstrip("%"))
+    if mtype == "percent":
+        return v / 100
+    if mtype == "amount":
+        return v / amount if amount else None
+    return v
+
+
+def find_band(m, bands):
+    hits = [b for b in bands if (b["lo"] is None or m >= b["lo"]) and (b["hi"] is None or m < b["hi"])]
+    return hits
 
 
 def clear_output(out):
@@ -135,21 +216,37 @@ def main():
     if missing:
         print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
-    rates = cfg["rates"]
+    bands = load_rates(cfg.get("rates_file", "rates.xlsx"))
+    if "margin" not in cfg["columns"] or cfg["columns"]["margin"] not in header:
+        raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{cfg['columns'].get('margin')}' ในไฟล์ยอดขาย")
+    mtype = cfg.get("margin_type", "percent")
     detail = classify(rows, year, lookback)
+    problems = []
     for d in detail:
-        d["rate"] = rates[d["category"]]
+        m = to_margin(d["margin_raw"], d["amount"], mtype)
+        hits = [] if m is None else find_band(m, bands)
+        if len(hits) != 1:
+            why = "ไม่มีค่า Margin" if m is None else (
+                f"Margin {m:.2%} ไม่อยู่ในช่วงใดเลย" if not hits else f"Margin {m:.2%} ตรงหลายช่วง")
+            problems.append(f"{d['date']:%Y-%m-%d} ลูกค้า {d['customer']} P-line {d['pline']}: {why}")
+            continue
+        d["margin"], d["band"] = m, hits[0]["label"]
+        d["rate"] = hits[0]["rates"][d["category"]]
         d["incentive"] = round(d["amount"] * d["rate"], 2)
+    if problems:
+        raise SystemExit(f"❌ มี {len(problems)} แถวที่หาอัตราไม่ได้ (ตัวอย่าง):\n  " + "\n  ".join(problems[:10]))
 
     out = Path(a.outdir)
     clear_output(out)
 
-    # File 2: raw data ของปีที่คำนวณ + คอลัมน์ Type
+    # File 2: raw data ของปีที่คำนวณ + Type / Margin Band / Rate / Incentive
+    extra = ["Type", "Margin Band", "Rate", "Incentive"]
     with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(header) + ["Type"])
+        w = csv.DictWriter(f, fieldnames=list(header) + extra)
         w.writeheader()
         for d in detail:
-            w.writerow({**d["raw"], "Type": d["category"]})
+            w.writerow({**d["raw"], "Type": d["category"], "Margin Band": d["band"],
+                        "Rate": d["rate"], "Incentive": d["incentive"]})
 
     # File 1: Sale Summary — incentive ต่อ Saleman แยกรายเดือน
     months = list(range(1, 13))
