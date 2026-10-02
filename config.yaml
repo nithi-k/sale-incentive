@@ -1,0 +1,13 @@
+# Incentive rules - placeholder values, replace with CBG's actual policy
+columns:
+  salesperson: salesperson
+  amount: amount
+  product_line: product_line
+  date: date
+
+# Tiered rate on each salesperson's total sales for the period (THB)
+tiers:
+  - {min: 0,       rate: 0.00}
+  - {min: 100000,  rate: 0.01}
+  - {min: 300000,  rate: 0.02}
+  - {min: 500000,  rate: 0.03}

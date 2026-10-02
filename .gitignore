@@ -1,0 +1,8 @@
+# Real sales data and results stay local - never commit them
+data/*
+!data/sample_sales.csv
+output/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
