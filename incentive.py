@@ -31,12 +31,18 @@ def parse_date(s):
     raise ValueError(f"อ่านวันที่ไม่ได้: {s!r}")
 
 
+def row_date(r, cols):
+    if "date" in cols:
+        return parse_date(r[cols["date"]])
+    return datetime(int(r[cols["year"]]), int(r[cols["month"]]), int(r[cols["day"]]))
+
+
 def load_sales(path, cols):
     rows = []
     with open(path, encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
             rows.append({
-                "date": parse_date(r[cols["date"]]),
+                "date": row_date(r, cols),
                 "salesperson": r[cols["salesperson"]].strip(),
                 "customer": r[cols["customer"]].strip(),
                 "pline": r[cols["pline"]].strip(),
@@ -77,6 +83,11 @@ def main():
 
     cfg = load_config(a.config)
     rows = load_sales(a.sales_csv, cfg["columns"])
+    excluded = set(cfg.get("exclude_plines") or [])
+    rows = [r for r in rows if r["pline"] not in excluded]
+    if not rows:
+        print("ไม่มียอดขายให้คำนวณ (หลังตัด P-line ที่ยกเว้น)")
+        return
     year = a.year or max(r["date"].year for r in rows)
     lookback = cfg.get("lookback_years", 2)
     years_in_file = {r["date"].year for r in rows}
