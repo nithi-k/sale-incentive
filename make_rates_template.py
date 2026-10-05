@@ -1,5 +1,6 @@
 """สร้างไฟล์ rates.xlsx (อัตรา Commission ตาม Type x Margin Tier) แบบว่าง ให้กรอกช่องสีเหลือง
-Usage: python make_rates_template.py [rates.xlsx]
+Usage: python make_rates_template.py [data/rates.xlsx]
+ไม่เขียนทับไฟล์ที่มีอยู่แล้ว (กันอัตราที่กรอกไว้หาย)
 """
 import sys
 from openpyxl import Workbook
@@ -58,6 +59,10 @@ def build(path):
 
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "rates.xlsx"
+    from pathlib import Path
+    out = sys.argv[1] if len(sys.argv) > 1 else "data/rates.xlsx"
+    if Path(out).exists():
+        sys.exit(f"มีไฟล์ {out} อยู่แล้ว — ไม่เขียนทับ (ลบหรือเปลี่ยนชื่อไฟล์เดิมก่อน)")
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     build(out)
     print(f"สร้าง {out} แล้ว — กรอกช่องสีเหลืองให้ครบก่อนรัน incentive.py")

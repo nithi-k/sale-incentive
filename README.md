@@ -3,18 +3,20 @@
 Calculates sales incentives from a CSV of sales records.
 
 ## Run
+All input files must be in `data/` (the program refuses files elsewhere):
+`data/rates.xlsx` (commission rates) and the sales export (`.txt` / `.csv` / `.xlsx`).
 ```
 pip install -r requirements.txt
-python incentive.py data/sample_sales.csv
+python make_rates_template.py        # first time only: creates data/rates.xlsx
+python incentive.py IC3051-3.txt     # file name inside data/
 ```
 
 ## Configure
-1. **`rates.xlsx`** — fill in every yellow cell before running (values can differ per company):
+1. **`data/rates.xlsx`** — create it with `python make_rates_template.py`, then fill in every yellow cell before running (values can differ per company):
    - `TYPE/MARGIN` table: commission % for each Type × Tier (LOW / MID / HIGH)
    - `MARGIN TYPE` table: MIN margin of each Tier. A row gets the highest Tier whose MIN it
      reaches (margin ≥ MIN). Below the lowest MIN = `BELOW MIN`, no commission.
    The program refuses to run if any yellow cell is empty or two MINs are equal.
-   Recreate a blank copy with `python make_rates_template.py`.
 2. **`config.yaml`** — column names (margin column = `PGROSS`) and `margin_type`
    (`percent` = 25 means 25%, `ratio` = 0.25, `amount` = gross profit in THB).
 

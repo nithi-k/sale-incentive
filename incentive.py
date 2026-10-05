@@ -5,7 +5,7 @@
   OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า แต่ไม่เคยซื้อ Pline นี้ในช่วงย้อนหลัง
   OCOP ลูกค้าเก่า + สินค้าเก่า : นอกเหนือจากนั้น
 
-Usage: python incentive.py data/IC3051.txt (หรือ .csv / .xlsx) [--year 2026] [--config config.yaml]
+Usage: python incentive.py IC3051.txt   (ไฟล์ต้องอยู่ใน data/ — .txt / .csv / .xlsx) [--year 2026] [--config config.yaml]
 """
 import argparse
 import csv
@@ -222,15 +222,34 @@ def clear_output(out):
     out.mkdir(parents=True, exist_ok=True)
 
 
+DATA_DIR = Path("data")
+
+
+def in_data(path, what):
+    """บังคับให้ไฟล์ input อยู่ในโฟลเดอร์ data/ เท่านั้น (ใส่แค่ชื่อไฟล์ก็ได้)"""
+    p = Path(path)
+    if not p.is_absolute() and p.parts[:1] != ("data",):
+        p = DATA_DIR / p
+    data = DATA_DIR.resolve()
+    rp = p.resolve()
+    if data not in rp.parents:
+        raise SystemExit(f"❌ {what} ต้องอยู่ในโฟลเดอร์ data/ เท่านั้น: {path}")
+    if not rp.exists():
+        raise SystemExit(f"❌ ไม่พบ{what}: {p}")
+    return rp
+
+
 def main():
     p = argparse.ArgumentParser(description="คำนวณ Sales Incentive")
-    p.add_argument("sales_csv")
+    p.add_argument("sales_csv", help="ไฟล์ยอดขายในโฟลเดอร์ data/ (ใส่แค่ชื่อไฟล์ได้)")
     p.add_argument("--year", type=int, help="ปีที่คำนวณ (ค่าเริ่มต้น = ปีล่าสุดในไฟล์)")
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--outdir", default="output")
     a = p.parse_args()
 
     cfg = load_config(a.config)
+    a.sales_csv = in_data(a.sales_csv, "ไฟล์ยอดขาย")
+    rates_path = in_data(cfg.get("rates_file", "rates.xlsx"), "ไฟล์อัตรา (rates.xlsx)")
     rows, header = load_sales(a.sales_csv, cfg["columns"], cfg.get("delimiter"))
     excluded = set(cfg.get("exclude_plines") or [])
     rows = [r for r in rows if r["pline"] not in excluded]
@@ -244,7 +263,7 @@ def main():
     if missing:
         print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
-    tiers = load_rates(cfg.get("rates_file", "rates.xlsx"))
+    tiers = load_rates(rates_path)
     margin_col = cfg["columns"].get("margin")
     if not margin_col or margin_col not in header:
         raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{margin_col}' ในไฟล์ยอดขาย")
