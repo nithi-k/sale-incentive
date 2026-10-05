@@ -103,66 +103,84 @@ def classify(rows, year, lookback):
 
 
 CATEGORIES = ["OCOP", "OCNP", "NC"]
+BELOW = "BELOW MIN"
 
 
 def load_rates(path):
-    """อ่าน rates.xlsx: ช่วง Margin (ตั้งแต่ ≥ / น้อยกว่า <) และอัตราของแต่ละ Type
-    คืนค่า list ของ band: {label, lo, hi, rates{Type: rate}}"""
+    """อ่าน rates.xlsx
+    ตาราง 'TYPE/MARGIN': Commission % ของแต่ละ Type ในแต่ละ Tier
+    ตาราง 'MARGIN TYPE' : MIN Margin ของแต่ละ Tier
+    คืนค่า list ของ tier เรียงจาก MIN น้อยไปมาก: {name, min, rates{Type: rate}}"""
     import openpyxl
     if not Path(path).exists():
         raise SystemExit(f"ไม่พบไฟล์อัตรา {path} — สร้างด้วย: python make_rates_template.py")
     ws = openpyxl.load_workbook(path, data_only=True).worksheets[0]
-    # หาแถวตามป้ายในคอลัมน์ A
-    row_of = {}
-    for r in range(1, ws.max_row + 1):
-        v = cell_str(ws.cell(row=r, column=1).value)
-        if v:
-            row_of[v] = r
-    label_row = row_of.get("TYPE/MARGIN")
-    lo_row = next((r for k, r in row_of.items() if k.startswith("Margin") and "≥" in k), None)
-    hi_row = next((r for k, r in row_of.items() if k.startswith("Margin") and "<" in k), None)
-    if not all([label_row, lo_row, hi_row] + [row_of.get(c) for c in CATEGORIES]):
-        raise SystemExit(f"รูปแบบ {path} ไม่ถูกต้อง — สร้างใหม่ด้วย make_rates_template.py")
 
-    cols = []
-    c = 2
-    while cell_str(ws.cell(row=label_row, column=c).value):
-        cols.append(c)
-        c += 1
-    if not cols:
-        raise SystemExit(f"{path}: ไม่มีช่วง Margin")
+    def find(label):
+        for row in ws.iter_rows():
+            for c in row:
+                if cell_str(c.value).upper() == label:
+                    return c.row, c.column
+        raise SystemExit(f"❌ {path}: ไม่พบหัวตาราง '{label}' — สร้างใหม่ด้วย make_rates_template.py")
 
     def num(r, c):
         v = ws.cell(row=r, column=c).value
         if v is None or cell_str(v) == "":
             return None
         if isinstance(v, str):
-            v = v.strip().rstrip("%")
-            return float(v) / 100
+            return float(v.strip().rstrip("%")) / 100
         return float(v)
 
-    errors, bands = [], []
-    for i, c in enumerate(cols):
-        col = ws.cell(row=label_row, column=c).column_letter
-        label = cell_str(ws.cell(row=label_row, column=c).value)
-        lo, hi = num(lo_row, c), num(hi_row, c)
-        if lo is None and i > 0:
-            errors.append(f"{col}{lo_row} (Margin ตั้งแต่ ของช่วง {label})")
-        if hi is None and i < len(cols) - 1:
-            errors.append(f"{col}{hi_row} (Margin น้อยกว่า ของช่วง {label})")
+    def ref(r, c):
+        return f"{ws.cell(row=r, column=c).column_letter}{r}"
+
+    errors = []
+    # ตาราง Commission %
+    hr, hc = find("TYPE/MARGIN")
+    tier_cols = {}
+    c = hc + 1
+    while cell_str(ws.cell(row=hr, column=c).value):
+        tier_cols[cell_str(ws.cell(row=hr, column=c).value).upper()] = c
+        c += 1
+    type_rows = {}
+    r = hr + 1
+    while cell_str(ws.cell(row=r, column=hc).value):
+        type_rows[cell_str(ws.cell(row=r, column=hc).value).upper()] = r
+        r += 1
+    missing_types = [t for t in CATEGORIES if t not in type_rows]
+    if missing_types or not tier_cols:
+        raise SystemExit(f"❌ {path}: ตาราง TYPE/MARGIN ต้องมีแถว {CATEGORIES} และมี Tier อย่างน้อย 1 ช่อง")
+
+    # ตาราง MIN
+    mr, mc = find("MARGIN TYPE")
+    mins = {}
+    r = mr + 1
+    while cell_str(ws.cell(row=r, column=mc).value):
+        name = cell_str(ws.cell(row=r, column=mc).value).upper()
+        v = num(r, mc + 1)
+        if v is None:
+            errors.append(f"{ref(r, mc + 1)} (MIN ของ {name})")
+        mins[name] = v
+        r += 1
+
+    tiers = []
+    for name, c in tier_cols.items():
+        if name not in mins:
+            errors.append(f"ตาราง MARGIN TYPE ไม่มี Tier '{name}'")
         rates = {}
-        for cat in CATEGORIES:
-            v = num(row_of[cat], c)
+        for t in CATEGORIES:
+            v = num(type_rows[t], c)
             if v is None:
-                errors.append(f"{col}{row_of[cat]} ({cat} ช่วง {label})")
-            rates[cat] = v
-        bands.append({"label": label, "lo": lo, "hi": hi, "rates": rates})
+                errors.append(f"{ref(type_rows[t], c)} ({t} / {name})")
+            rates[t] = v
+        tiers.append({"name": name, "min": mins.get(name), "rates": rates})
     if errors:
-        raise SystemExit(f"❌ กรอก {path} ยังไม่ครบ — ช่องที่ว่าง:\n  " + "\n  ".join(errors))
-    for b in bands:
-        if b["lo"] is not None and b["hi"] is not None and b["lo"] >= b["hi"]:
-            raise SystemExit(f"❌ {path}: ช่วง {b['label']} — 'ตั้งแต่' ต้องน้อยกว่า 'น้อยกว่า'")
-    return bands
+        raise SystemExit(f"❌ กรอก {path} ยังไม่ครบ:\n  " + "\n  ".join(errors))
+    tiers.sort(key=lambda t: t["min"])
+    for a, b in zip(tiers, tiers[1:]):
+        if a["min"] == b["min"]:
+            raise SystemExit(f"❌ {path}: MIN ของ {a['name']} และ {b['name']} ซ้ำกัน ({a['min']:.2%})")
+    return tiers
 
 
 def to_margin(raw, amount, mtype):
@@ -177,9 +195,13 @@ def to_margin(raw, amount, mtype):
     return v
 
 
-def find_band(m, bands):
-    hits = [b for b in bands if (b["lo"] is None or m >= b["lo"]) and (b["hi"] is None or m < b["hi"])]
-    return hits
+def find_tier(m, tiers):
+    """Tier ที่ MIN สูงสุดซึ่ง Margin ถึง; ต่ำกว่า MIN ต่ำสุด = None"""
+    hit = None
+    for t in tiers:
+        if m >= t["min"]:
+            hit = t
+    return hit
 
 
 def clear_output(out):
@@ -216,37 +238,38 @@ def main():
     if missing:
         print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
-    bands = load_rates(cfg.get("rates_file", "rates.xlsx"))
-    if "margin" not in cfg["columns"] or cfg["columns"]["margin"] not in header:
-        raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{cfg['columns'].get('margin')}' ในไฟล์ยอดขาย")
+    tiers = load_rates(cfg.get("rates_file", "rates.xlsx"))
+    margin_col = cfg["columns"].get("margin")
+    if not margin_col or margin_col not in header:
+        raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{margin_col}' ในไฟล์ยอดขาย")
     mtype = cfg.get("margin_type", "percent")
     detail = classify(rows, year, lookback)
     problems = []
     for d in detail:
         m = to_margin(d["margin_raw"], d["amount"], mtype)
-        hits = [] if m is None else find_band(m, bands)
-        if len(hits) != 1:
-            why = "ไม่มีค่า Margin" if m is None else (
-                f"Margin {m:.2%} ไม่อยู่ในช่วงใดเลย" if not hits else f"Margin {m:.2%} ตรงหลายช่วง")
-            problems.append(f"{d['date']:%Y-%m-%d} ลูกค้า {d['customer']} P-line {d['pline']}: {why}")
+        if m is None:
+            problems.append(f"{d['date']:%Y-%m-%d} ลูกค้า {d['customer']} P-line {d['pline']}: ไม่มีค่า Margin")
             continue
-        d["margin"], d["band"] = m, hits[0]["label"]
-        d["rate"] = hits[0]["rates"][d["category"]]
-        d["incentive"] = round(d["amount"] * d["rate"], 2)
+        t = find_tier(m, tiers)
+        d["tier"] = t["name"] if t else BELOW
+        d["rate"] = t["rates"][d["category"]] if t else 0.0
+        d["incentive"] = round(d["amount"] * d["rate"], 2) + 0.0  # +0.0 กัน -0.0
     if problems:
         raise SystemExit(f"❌ มี {len(problems)} แถวที่หาอัตราไม่ได้ (ตัวอย่าง):\n  " + "\n  ".join(problems[:10]))
 
     out = Path(a.outdir)
     clear_output(out)
 
-    # File 2: raw data ของปีที่คำนวณ + Type / Margin Band / Rate / Incentive
-    extra = ["Type", "Margin Band", "Rate", "Incentive"]
+    # File 2: raw data ของปีที่คำนวณ + Type / Margin Tier / Commission %
+    # ไม่แสดงตัวเลข Margin จริง (ตัดคอลัมน์ margin ออก) — Sale เห็นแค่ Tier
+    out_header = [h for h in header if h != margin_col]
+    extra = ["Type", "Margin Tier", "Calculated Commission %", "Commission (THB)"]
     with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(header) + extra)
+        w = csv.DictWriter(f, fieldnames=out_header + extra, extrasaction="ignore")
         w.writeheader()
         for d in detail:
-            w.writerow({**d["raw"], "Type": d["category"], "Margin Band": d["band"],
-                        "Rate": d["rate"], "Incentive": d["incentive"]})
+            w.writerow({**d["raw"], "Type": d["category"], "Margin Tier": d["tier"],
+                        "Calculated Commission %": f"{d['rate']:.2%}", "Commission (THB)": d["incentive"]})
 
     # File 1: Sale Summary — incentive ต่อ Saleman แยกรายเดือน
     months = list(range(1, 13))
