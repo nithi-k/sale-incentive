@@ -5,7 +5,7 @@
   OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า แต่ไม่เคยซื้อ Pline นี้ในช่วงย้อนหลัง
   OCOP ลูกค้าเก่า + สินค้าเก่า : นอกเหนือจากนั้น
 
-Usage: python incentive.py data/sales.csv (หรือ .xlsx) [--year 2026] [--config config.yaml]
+Usage: python incentive.py data/IC3051.txt (หรือ .csv / .xlsx) [--year 2026] [--config config.yaml]
 """
 import argparse
 import csv
@@ -48,8 +48,8 @@ def cell_str(v):
     return str(v).strip()
 
 
-def read_table(path):
-    """อ่าน CSV หรือ Excel (.xlsx) คืนค่า (header, list ของ dict)"""
+def read_table(path, delimiter=None):
+    """อ่าน Raw Text (.txt), CSV หรือ Excel (.xlsx) คืนค่า (header, list ของ dict)"""
     if Path(path).suffix.lower() in (".xlsx", ".xlsm"):
         import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
@@ -60,12 +60,18 @@ def read_table(path):
         wb.close()
         return header, rows
     with open(path, encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        return reader.fieldnames, list(reader)
+        first = f.readline()
+        f.seek(0)
+        if not delimiter:
+            delimiter = max(["|", "\t", ","], key=first.count)
+        reader = csv.DictReader(f, delimiter=delimiter)
+        header = [h.strip() for h in reader.fieldnames]
+        reader.fieldnames = header
+        return header, list(reader)
 
 
-def load_sales(path, cols):
-    header, raw_rows = read_table(path)
+def load_sales(path, cols, delimiter=None):
+    header, raw_rows = read_table(path, delimiter)
     rows = []
     for r in raw_rows:
         rows.append({
@@ -225,7 +231,7 @@ def main():
     a = p.parse_args()
 
     cfg = load_config(a.config)
-    rows, header = load_sales(a.sales_csv, cfg["columns"])
+    rows, header = load_sales(a.sales_csv, cfg["columns"], cfg.get("delimiter"))
     excluded = set(cfg.get("exclude_plines") or [])
     rows = [r for r in rows if r["pline"] not in excluded]
     if not rows:
@@ -262,7 +268,8 @@ def main():
 
     # File 2: raw data ของปีที่คำนวณ + Type / Margin Tier / Commission %
     # ไม่แสดงตัวเลข Margin จริง (ตัดคอลัมน์ margin ออก) — Sale เห็นแค่ Tier
-    out_header = [h for h in header if h != margin_col]
+    hidden = {margin_col, *(cfg.get("hide_columns") or [])}
+    out_header = [h for h in header if h not in hidden]
     extra = ["Type", "Margin Tier", "Calculated Commission %", "Commission (THB)"]
     with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=out_header + extra, extrasaction="ignore")

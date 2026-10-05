@@ -1,19 +1,27 @@
-# ชื่อคอลัมน์ในไฟล์ยอดขาย (CSV หรือ Excel)
+# ชื่อคอลัมน์ในไฟล์ยอดขาย (Raw Text จากระบบ, คั่นด้วย |)
 columns:
-  day: Day
-  month: Month
-  year: Year
+  date: Invoice Date        # YYYY-MM-DD
   salesperson: Saleman
   customer: Customer No.
   pline: P-line
   amount: Net Price (THB)   # ยอดก่อน VAT
-  margin: PGROSS            # Margin ของแต่ละแถว
+  margin: PGross            # Margin ของแต่ละแถว
+
+# ตัวคั่นคอลัมน์ของไฟล์ .txt
+delimiter: "|"
 
 # รูปแบบค่าในคอลัมน์ margin:
-#   percent = 25 หมายถึง 25%
 #   ratio   = 0.25 หมายถึง 25%
+#   percent = 25 หมายถึง 25%
 #   amount  = กำไรขั้นต้นเป็นบาท (คิด % จาก amount)
-margin_type: percent
+margin_type: ratio
+
+# คอลัมน์ที่ไม่แสดงใน raw_data output (ข้อมูลต้นทุน/กำไร — Sale ไม่ควรเห็น)
+# คอลัมน์ margin ถูกซ่อนเสมออยู่แล้ว
+hide_columns:
+  - Actual Cost(THB)
+  - Cost AMT
+  - Gross
 
 # P-line ที่ไม่นับเป็นยอดขาย (ถ้ามี) เช่น [XXX, YYY]
 exclude_plines: []
@@ -21,5 +29,5 @@ exclude_plines: []
 # จำนวนปีย้อนหลังที่ใช้เช็คลูกค้าใหม่ / สินค้าใหม่ (ไม่นับปีที่คำนวณ)
 lookback_years: 2
 
-# ไฟล์อัตรา Incentive (Type x Margin) — กรอกช่องสีเหลืองให้ครบก่อนรัน
+# ไฟล์อัตรา Commission (Type x Margin Tier) — กรอกช่องสีเหลืองให้ครบก่อนรัน
 rates_file: rates.xlsx
