@@ -110,6 +110,7 @@ def classify(rows, year, lookback):
 
 CATEGORIES = ["OCOP", "OCNP", "NC"]
 BELOW = "BELOW MIN"
+NO_COMM = "NO COMMISSION"
 
 
 def load_rates(path):
@@ -268,9 +269,27 @@ def main():
     if not margin_col or margin_col not in header:
         raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{margin_col}' ในไฟล์ยอดขาย")
     mtype = cfg.get("margin_type", "percent")
+    nc_cfg = cfg.get("no_commission") or {}
+    skip_items = {str(x).strip().upper() for x in nc_cfg.get("item_nos") or []}
+    cost_col = nc_cfg.get("zero_cost_column")
+    if cost_col and cost_col not in header:
+        raise SystemExit(f"❌ ไม่พบคอลัมน์ต้นทุน '{cost_col}' ในไฟล์ยอดขาย")
+    item_col = next((h for h in header if h.strip().lower() == "item no."), None)
+
+    def no_commission(d):
+        if item_col and cell_str(d["raw"].get(item_col)).upper() in skip_items:
+            return True
+        if cost_col:
+            v = cell_str(d["raw"].get(cost_col)).replace(",", "")
+            return v == "" or float(v) == 0
+        return False
+
     detail = classify(rows, year, lookback)
     problems = []
     for d in detail:
+        if no_commission(d):
+            d["tier"], d["rate"], d["incentive"] = NO_COMM, 0.0, 0.0
+            continue
         m = to_margin(d["margin_raw"], d["amount"], mtype)
         if m is None:
             problems.append(f"{d['date']:%Y-%m-%d} ลูกค้า {d['customer']} P-line {d['pline']}: ไม่มีค่า Margin")

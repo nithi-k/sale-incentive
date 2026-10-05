@@ -23,6 +23,11 @@ hide_columns:
   - Cost AMT
   - Gross
 
+# แถวที่ไม่คิด Commission (ยังนับเป็นประวัติลูกค้า/สินค้า และแสดงใน raw_data)
+no_commission:
+  item_nos: [USDB]                  # Item No. ที่ไม่คิด Commission
+  zero_cost_column: Actual Cost(THB) # แถวที่ต้นทุนในคอลัมน์นี้เป็น 0
+
 # P-line ที่ไม่นับเป็นยอดขาย (ถ้ามี) เช่น [XXX, YYY]
 exclude_plines: []
 

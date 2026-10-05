@@ -26,6 +26,8 @@ python incentive.py IC3051-3.txt     # file name inside data/
 | OCNP | Existing customer, P-line not bought in the previous 2 years |
 | OCOP | Existing customer, existing P-line |
 
+Rows with `Item No.` = USDB or `Actual Cost(THB)` = 0 get no commission (Tier `NO COMMISSION`); they still count as purchase history. Configure in `no_commission`.
+
 Margin is evaluated per row. Amounts are before VAT (`Net Price (THB)`).
 Only the latest year in the file is calculated; the 2 years before are reference only.
 
