@@ -308,12 +308,18 @@ def main():
     # ไม่แสดงตัวเลข Margin จริง (ตัดคอลัมน์ margin ออก) — Sale เห็นแค่ Tier
     hidden = {margin_col, *(cfg.get("hide_columns") or [])}
     out_header = [h for h in header if h not in hidden]
+    # แยก Month / Year จาก Invoice Date มาไว้ถัดจากคอลัมน์วันที่
+    date_col = cfg["columns"].get("date")
+    add_my = [c for c in ("Month", "Year") if c not in header]
+    if date_col in out_header and add_my:
+        i = out_header.index(date_col) + 1
+        out_header[i:i] = add_my
     extra = ["Type", "Margin Tier", "Calculated Commission %", "Commission (THB)"]
     with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=out_header + extra, extrasaction="ignore")
         w.writeheader()
         for d in detail:
-            w.writerow({**d["raw"], "Type": d["category"], "Margin Tier": d["tier"],
+            w.writerow({**d["raw"], "Month": d["date"].month, "Year": d["date"].year, "Type": d["category"], "Margin Tier": d["tier"],
                         "Calculated Commission %": f"{d['rate']:.2%}", "Commission (THB)": d["incentive"]})
 
     # File 1: Sale Summary — incentive ต่อ Saleman แยกรายเดือน
