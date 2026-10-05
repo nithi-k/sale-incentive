@@ -223,6 +223,100 @@ def clear_output(out):
     out.mkdir(parents=True, exist_ok=True)
 
 
+NUMERIC_HINTS = ("price", "qty", "rate", "thb", "amt")
+TEXT_COLUMNS = {"currency"}
+
+
+def is_numeric_col(h):
+    """คอลัมน์ตัวเลข (ราคา/จำนวน/อัตรา) — คอลัมน์รหัสอื่น ๆ เก็บเป็นข้อความ กันเลข 0 นำหน้าหาย"""
+    hl = h.lower()
+    return hl not in TEXT_COLUMNS and any(k in hl for k in NUMERIC_HINTS)
+
+
+def to_num(v):
+    if isinstance(v, (int, float)):
+        return v
+    t = cell_str(v).replace(",", "")
+    try:
+        return float(t)
+    except ValueError:
+        return t
+
+
+def write_excel(path, year, lookback, month_names, names, monthly, col_total, raw_cols, detail, date_col=None):
+    """เขียน 1 ไฟล์ 2 ชีต: Sale Summary และ Raw Data"""
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook(write_only=True)
+    head_fill = PatternFill("solid", fgColor="1F3864")
+    head_font = Font(bold=True, color="FFFFFF")
+    total_fill = PatternFill("solid", fgColor="D9E1F2")
+    money = "#,##0.00"
+
+    def cell(ws, v, fmt=None, bold=False, fill=None, head=False):
+        c = WriteOnlyCell(ws, value=v)
+        if head:
+            c.font, c.fill = head_font, head_fill
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if bold:
+            c.font = Font(bold=True)
+        if fill:
+            c.fill = fill
+        if fmt:
+            c.number_format = fmt
+        return c
+
+    # ชีต 1: Sale Summary
+    ws = wb.create_sheet("Sale Summary")
+    ws.freeze_panes = "B3"
+    ws.column_dimensions["A"].width = 12
+    for i in range(2, 15):
+        ws.column_dimensions[get_column_letter(i)].width = 12
+    ws.column_dimensions["N"].width = 14
+    ws.append([cell(ws, f"Commission ปี {year} (เช็คลูกค้า/สินค้าย้อนหลังปี {year - lookback}-{year - 1})", bold=True)])
+    ws.append([cell(ws, h, head=True) for h in ["Saleman"] + month_names + ["Total"]])
+    for n in names:
+        ws.append([cell(ws, n)] + [cell(ws, round(v, 2), money) for v in monthly[n]]
+                  + [cell(ws, round(sum(monthly[n]), 2), money, bold=True)])
+    ws.append([cell(ws, "Total", bold=True, fill=total_fill)]
+              + [cell(ws, round(v, 2), money, bold=True, fill=total_fill) for v in col_total]
+              + [cell(ws, round(sum(col_total), 2), money, bold=True, fill=total_fill)])
+
+    # ชีต 2: Raw Data
+    ws = wb.create_sheet("Raw Data")
+    ws.freeze_panes = "A2"
+    last = get_column_letter(len(raw_cols))
+    ws.auto_filter.ref = f"A1:{last}{len(detail) + 1}"
+    for i, h in enumerate(raw_cols, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = 28 if "name" in h.lower() else max(10, min(len(h) + 2, 22))
+    ws.append([cell(ws, h, head=True) for h in raw_cols])
+    numeric = {h for h in raw_cols if is_numeric_col(h)}
+    for d in detail:
+        vals = {**d["raw"], "Month": d["date"].month, "Year": d["date"].year, "Type": d["category"],
+                "Margin Tier": d["tier"]}
+        row = []
+        for h in raw_cols:
+            if h == date_col:
+                row.append(cell(ws, d["date"], "yyyy-mm-dd"))
+            elif h == "Calculated Commission %":
+                row.append(cell(ws, d["rate"], "0.00%"))
+            elif h == "Commission (THB)":
+                row.append(cell(ws, d["incentive"], money))
+            elif h in ("Month", "Year"):
+                row.append(int(vals[h]) if cell_str(vals[h]).isdigit() else vals[h])
+            elif h in numeric:
+                v = to_num(vals.get(h))
+                row.append(cell(ws, v, money) if isinstance(v, float) else v)
+            else:
+                v = vals.get(h)
+                row.append(cell_str(v) if v is not None else None)
+        ws.append(row)
+    wb.save(path)
+
+
 DATA_DIR = Path("data")
 
 
@@ -304,8 +398,8 @@ def main():
     out = Path(a.outdir)
     clear_output(out)
 
-    # File 2: raw data ของปีที่คำนวณ + Type / Margin Tier / Commission %
-    # ไม่แสดงตัวเลข Margin จริง (ตัดคอลัมน์ margin ออก) — Sale เห็นแค่ Tier
+    # ---- คอลัมน์ของชีต Raw Data ----
+    # ไม่แสดงตัวเลข Margin จริงและต้นทุน — Sale เห็นแค่ Tier
     hidden = {margin_col, *(cfg.get("hide_columns") or [])}
     out_header = [h for h in header if h not in hidden]
     # แยก Month / Year จาก Invoice Date มาไว้ถัดจากคอลัมน์วันที่
@@ -315,34 +409,25 @@ def main():
         i = out_header.index(date_col) + 1
         out_header[i:i] = add_my
     extra = ["Type", "Margin Tier", "Calculated Commission %", "Commission (THB)"]
-    with open(out / f"raw_data_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=out_header + extra, extrasaction="ignore")
-        w.writeheader()
-        for d in detail:
-            w.writerow({**d["raw"], "Month": d["date"].month, "Year": d["date"].year, "Type": d["category"], "Margin Tier": d["tier"],
-                        "Calculated Commission %": f"{d['rate']:.2%}", "Commission (THB)": d["incentive"]})
 
-    # File 1: Sale Summary — incentive ต่อ Saleman แยกรายเดือน
-    months = list(range(1, 13))
+    # ---- ข้อมูลชีต Sale Summary ----
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     monthly = defaultdict(lambda: [0.0] * 12)
     for d in detail:
         monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
     names = sorted(monthly)
-    col_total = [sum(monthly[n][m - 1] for n in names) for m in months]
-    with open(out / f"sale_summary_{year}.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["Saleman"] + month_names + ["Total"])
-        for n in names:
-            w.writerow([n] + [round(v, 2) for v in monthly[n]] + [round(sum(monthly[n]), 2)])
-        w.writerow(["Total"] + [round(v, 2) for v in col_total] + [round(sum(col_total), 2)])
+    col_total = [sum(monthly[n][m] for n in names) for m in range(12)]
+
+    out_file = out / f"incentive_{year}.xlsx"
+    write_excel(out_file, year, lookback, month_names, names, monthly, col_total,
+                out_header + extra, detail, date_col)
 
     print(f"Incentive ปี {year} (เช็คย้อนหลังปี {year - lookback}-{year - 1})\n")
     print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in month_names) + f"{'Total':>11}")
     for n in names + ["Total"]:
         vals = col_total if n == "Total" else monthly[n]
         print(f"{n:<10}" + "".join(f"{v:>9,.0f}" for v in vals) + f"{sum(vals):>11,.2f}")
-    print(f"\nบันทึกไฟล์ที่ {out}/")
+    print(f"\nบันทึกไฟล์ {out_file}")
 
 
 if __name__ == "__main__":

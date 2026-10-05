@@ -31,8 +31,8 @@ Rows with `Item No.` = USDB or `Actual Cost(THB)` = 0 get no commission (Tier `N
 Margin is evaluated per row. Amounts are before VAT (`Net Price (THB)`).
 Only the latest year in the file is calculated; the 2 years before are reference only.
 
-Results: `output/sale_summary_<year>.csv` (incentive per Saleman by month) and
-`output/raw_data_<year>.csv` (original rows of that year **without the margin column** + Type,
+Result: `output/incentive_<year>.xlsx` with 2 sheets — **Sale Summary** (commission per Saleman by month) and
+**Raw Data** (original rows of that year **without margin/cost columns** + Month, Year, Type,
 Margin Tier, Calculated Commission %, Commission (THB)). Sales staff see only the Tier, never the actual margin.
 
 ## Data
