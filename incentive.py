@@ -111,6 +111,43 @@ def classify(rows, year, lookback):
 CATEGORIES = ["OCOP", "OCNP", "NC"]
 BELOW = "BELOW MIN"
 NO_COMM = "NO COMMISSION"
+NEW_PRODUCT = "NEW PRODUCT"
+
+
+def load_new_products(path):
+    """ชีต 'New Product' ใน rates.xlsx: Item No. -> Commission % (Flat rate)"""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True)
+    if "New Product" not in wb.sheetnames:
+        raise SystemExit(f"❌ {path}: ไม่มีชีต 'New Product' — เพิ่มด้วย: python make_rates_template.py --add-new-product")
+    ws = wb["New Product"]
+    start = None
+    for row in ws.iter_rows():
+        if cell_str(row[0].value).lower() == "item no.":
+            start = row[0].row + 1
+            break
+    if start is None:
+        raise SystemExit(f"❌ {path}: ชีต New Product ไม่มีหัวคอลัมน์ 'Item No.'")
+    items, errors = {}, []
+    for r in range(start, ws.max_row + 1):
+        item = cell_str(ws.cell(row=r, column=1).value)
+        v = ws.cell(row=r, column=2).value
+        if not item and (v is None or cell_str(v) == ""):
+            continue
+        if not item:
+            errors.append(f"A{r} (มี % แต่ไม่มี Item No.)")
+            continue
+        if v is None or cell_str(v) == "":
+            errors.append(f"B{r} (Commission % ของ {item})")
+            continue
+        rate = float(v.strip().rstrip("%")) / 100 if isinstance(v, str) else float(v)
+        key = item.upper()
+        if key in items:
+            errors.append(f"A{r} (Item {item} ซ้ำ)")
+        items[key] = rate
+    if errors:
+        raise SystemExit(f"❌ ชีต New Product ใน {path} ไม่ถูกต้อง:\n  " + "\n  ".join(errors))
+    return items
 
 
 def load_rates(path):
@@ -296,7 +333,7 @@ def write_excel(path, year, lookback, month_names, names, monthly, col_total, ra
     numeric = {h for h in raw_cols if is_numeric_col(h)}
     for d in detail:
         vals = {**d["raw"], "Month": d["date"].month, "Year": d["date"].year, "Type": d["category"],
-                "Margin Tier": d["tier"]}
+                "Commission Tier": d["tier"]}
         row = []
         for h in raw_cols:
             if h == date_col:
@@ -359,6 +396,7 @@ def main():
         print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
     tiers = load_rates(rates_path)
+    new_products = load_new_products(rates_path)
     margin_col = cfg["columns"].get("margin")
     if not margin_col or margin_col not in header:
         raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{margin_col}' ในไฟล์ยอดขาย")
@@ -389,8 +427,13 @@ def main():
             problems.append(f"{d['date']:%Y-%m-%d} ลูกค้า {d['customer']} P-line {d['pline']}: ไม่มีค่า Margin")
             continue
         t = find_tier(m, tiers)
-        d["tier"] = t["name"] if t else BELOW
-        d["rate"] = t["rates"][d["category"]] if t else 0.0
+        item = cell_str(d["raw"].get(item_col)).upper() if item_col else ""
+        if t is None:                      # ต่ำกว่า MIN ต่ำสุด — ไม่ได้ทั้ง Tier และ New Product
+            d["tier"], d["rate"] = BELOW, 0.0
+        elif item in new_products:         # สินค้าใหม่: Flat rate ตามตาราง
+            d["tier"], d["rate"] = NEW_PRODUCT, new_products[item]
+        else:
+            d["tier"], d["rate"] = t["name"], t["rates"][d["category"]]
         d["incentive"] = round(d["amount"] * d["rate"], 2) + 0.0  # +0.0 กัน -0.0
     if problems:
         raise SystemExit(f"❌ มี {len(problems)} แถวที่หาอัตราไม่ได้ (ตัวอย่าง):\n  " + "\n  ".join(problems[:10]))
@@ -408,7 +451,7 @@ def main():
     if date_col in out_header and add_my:
         i = out_header.index(date_col) + 1
         out_header[i:i] = add_my
-    extra = ["Type", "Margin Tier", "Calculated Commission %", "Commission (THB)"]
+    extra = ["Type", "Commission Tier", "Calculated Commission %", "Commission (THB)"]
 
     # ---- ข้อมูลชีต Sale Summary ----
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
