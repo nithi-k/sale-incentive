@@ -109,7 +109,7 @@ def classify(rows, year, lookback):
 
 
 CATEGORIES = ["OCOP", "OCNP", "NC"]
-BELOW = "BELOW MIN"
+BELOW = "BELOW LOW"
 NO_COMM = "NO COMMISSION"
 NEW_PRODUCT = "NEW PRODUCT"
 
