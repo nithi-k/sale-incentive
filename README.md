@@ -11,6 +11,19 @@ python make_rates_template.py        # first time only: creates data/rates.xlsx
 python incentive.py IC3051-3.txt     # file name inside data/
 ```
 
+## Web app (upload → calculate → download)
+```
+pip install -r requirements-web.txt
+streamlit run app.py                      # opens http://localhost:8501
+```
+- Upload the sales export and `rates.xlsx` (if no rates file is uploaded, `data/rates.xlsx` on the
+  server is used). A blank rates template can be downloaded from the sidebar.
+- Set a password with the `APP_PASSWORD` environment variable before starting
+  (macOS/Linux: `APP_PASSWORD=... streamlit run app.py`, Windows PowerShell:
+  `$env:APP_PASSWORD="..."; streamlit run app.py`).
+- Host it on an internal machine/server or the company's cloud tenant only — the sales export
+  contains cost and margin data. Do not use public hosting.
+
 ## Configure
 1. **`data/rates.xlsx`** — create it with `python make_rates_template.py`, then fill in every yellow cell before running (values can differ per company):
    - `TYPE/MARGIN` table: commission % for each Type × Tier (LOW / MID / HIGH)

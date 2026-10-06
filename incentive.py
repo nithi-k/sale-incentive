@@ -371,29 +371,24 @@ def in_data(path, what):
     return rp
 
 
-def main():
-    p = argparse.ArgumentParser(description="คำนวณ Sales Incentive")
-    p.add_argument("sales_csv", help="ไฟล์ยอดขายในโฟลเดอร์ data/ (ใส่แค่ชื่อไฟล์ได้)")
-    p.add_argument("--year", type=int, help="ปีที่คำนวณ (ค่าเริ่มต้น = ปีล่าสุดในไฟล์)")
-    p.add_argument("--config", default="config.yaml")
-    p.add_argument("--outdir", default="output")
-    a = p.parse_args()
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    cfg = load_config(a.config)
-    a.sales_csv = in_data(a.sales_csv, "ไฟล์ยอดขาย")
-    rates_path = in_data(cfg.get("rates_file", "rates.xlsx"), "ไฟล์อัตรา (rates.xlsx)")
-    rows, header = load_sales(a.sales_csv, cfg["columns"], cfg.get("delimiter"))
+
+def compute(sales_path, rates_path, cfg, year=None):
+    """แกนคำนวณ — ใช้ร่วมกันทั้ง CLI และหน้าเว็บ
+    คืนค่า dict ผลลัพธ์ หรือ raise SystemExit พร้อมข้อความเมื่อข้อมูลไม่ถูกต้อง"""
+    warnings = []
+    rows, header = load_sales(sales_path, cfg["columns"], cfg.get("delimiter"))
     excluded = set(cfg.get("exclude_plines") or [])
     rows = [r for r in rows if r["pline"] not in excluded]
     if not rows:
-        print("ไม่มียอดขายให้คำนวณ (หลังตัด P-line ที่ยกเว้น)")
-        return
-    year = a.year or max(r["date"].year for r in rows)
+        raise SystemExit("ไม่มียอดขายให้คำนวณ (หลังตัด P-line ที่ยกเว้น)")
+    year = year or max(r["date"].year for r in rows)
     lookback = cfg.get("lookback_years", 2)
     years_in_file = {r["date"].year for r in rows}
     missing = [y for y in range(year - lookback, year) if y not in years_in_file]
     if missing:
-        print(f"⚠️  ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
+        warnings.append(f"ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
     tiers = load_rates(rates_path)
     new_products = load_new_products(rates_path)
@@ -417,6 +412,8 @@ def main():
         return False
 
     detail = classify(rows, year, lookback)
+    if not detail:
+        raise SystemExit(f"❌ ไม่มียอดขายของปี {year} ในไฟล์")
     problems = []
     for d in detail:
         if no_commission(d):
@@ -438,9 +435,6 @@ def main():
     if problems:
         raise SystemExit(f"❌ มี {len(problems)} แถวที่หาอัตราไม่ได้ (ตัวอย่าง):\n  " + "\n  ".join(problems[:10]))
 
-    out = Path(a.outdir)
-    clear_output(out)
-
     # ---- คอลัมน์ของชีต Raw Data ----
     # ไม่แสดงตัวเลข Margin จริงและต้นทุน — Sale เห็นแค่ Tier
     hidden = {margin_col, *(cfg.get("hide_columns") or [])}
@@ -454,21 +448,47 @@ def main():
     extra = ["Type", "Commission Tier", "Calculated Commission %", "Commission (THB)"]
 
     # ---- ข้อมูลชีต Sale Summary ----
-    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     monthly = defaultdict(lambda: [0.0] * 12)
     for d in detail:
         monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
     names = sorted(monthly)
     col_total = [sum(monthly[n][m] for n in names) for m in range(12)]
+    return {"year": year, "lookback": lookback, "warnings": warnings, "names": names,
+            "monthly": dict(monthly), "col_total": col_total, "raw_cols": out_header + extra,
+            "detail": detail, "date_col": date_col}
 
-    out_file = out / f"incentive_{year}.xlsx"
-    write_excel(out_file, year, lookback, month_names, names, monthly, col_total,
-                out_header + extra, detail, date_col)
 
+def save_excel(res, path):
+    """บันทึกผลเป็น Excel (path เป็นชื่อไฟล์ หรือ BytesIO ก็ได้)"""
+    write_excel(path, res["year"], res["lookback"], MONTH_NAMES, res["names"], res["monthly"],
+                res["col_total"], res["raw_cols"], res["detail"], res["date_col"])
+
+
+def main():
+    p = argparse.ArgumentParser(description="คำนวณ Sales Incentive")
+    p.add_argument("sales_csv", help="ไฟล์ยอดขายในโฟลเดอร์ data/ (ใส่แค่ชื่อไฟล์ได้)")
+    p.add_argument("--year", type=int, help="ปีที่คำนวณ (ค่าเริ่มต้น = ปีล่าสุดในไฟล์)")
+    p.add_argument("--config", default="config.yaml")
+    p.add_argument("--outdir", default="output")
+    a = p.parse_args()
+
+    cfg = load_config(a.config)
+    sales_path = in_data(a.sales_csv, "ไฟล์ยอดขาย")
+    rates_path = in_data(cfg.get("rates_file", "rates.xlsx"), "ไฟล์อัตรา (rates.xlsx)")
+    res = compute(sales_path, rates_path, cfg, a.year)
+    for w in res["warnings"]:
+        print(f"⚠️  {w}")
+
+    out = Path(a.outdir)
+    clear_output(out)
+    out_file = out / f"incentive_{res['year']}.xlsx"
+    save_excel(res, out_file)
+
+    year, lookback = res["year"], res["lookback"]
     print(f"Incentive ปี {year} (เช็คย้อนหลังปี {year - lookback}-{year - 1})\n")
-    print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in month_names) + f"{'Total':>11}")
-    for n in names + ["Total"]:
-        vals = col_total if n == "Total" else monthly[n]
+    print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in MONTH_NAMES) + f"{'Total':>11}")
+    for n in res["names"] + ["Total"]:
+        vals = res["col_total"] if n == "Total" else res["monthly"][n]
         print(f"{n:<10}" + "".join(f"{v:>9,.0f}" for v in vals) + f"{sum(vals):>11,.2f}")
     print(f"\nบันทึกไฟล์ {out_file}")
 

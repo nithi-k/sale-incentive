@@ -1,0 +1,5 @@
+[client]
+toolbarMode = "minimal"   # ซ่อนปุ่ม Deploy / เมนูนักพัฒนา
+
+[server]
+maxUploadSize = 200       # MB
