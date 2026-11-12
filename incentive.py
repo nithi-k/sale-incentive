@@ -2,7 +2,7 @@
 
 ประเภทยอดขาย (ปีที่คำนวณ = Y, เช็คย้อนหลังปี Y-1 ถึง Y-lookback):
   NC   ลูกค้าใหม่              : ลูกค้าไม่มีบิลเลยในช่วงย้อนหลัง
-  OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า แต่ไม่เคยซื้อ Pline นี้ในช่วงย้อนหลัง
+  OCNP ลูกค้าเก่า + สินค้าใหม่ : ลูกค้าเก่า และอยู่ภายใน 2 ปีนับจากวันที่ซื้อ P-line นี้ครั้งแรก
   OCOP ลูกค้าเก่า + สินค้าเก่า : นอกเหนือจากนั้น
 
 Usage: python incentive.py IC3051.txt   (ไฟล์ต้องอยู่ใน data/ — .txt / .csv / .xlsx) [--year 2026] [--config config.yaml]
@@ -86,25 +86,45 @@ def load_sales(path, cols, delimiter=None):
     return rows, header
 
 
-def classify(rows, year, lookback):
-    """เพิ่ม category ให้ทุกบรรทัดของปี `year`"""
+NEW_PRODUCT_YEARS = 2  # OCNP: สินค้าใหม่ต่อเนื่อง 2 ปีนับจากวันที่ลูกค้าซื้อ P-line นั้นครั้งแรก
+
+
+def add_years(dt, n):
+    """วันที่ + n ปี (29 ก.พ. -> 1 มี.ค. ถ้าปีปลายทางไม่มี 29 ก.พ.)"""
+    try:
+        return dt.replace(year=dt.year + n)
+    except ValueError:
+        return dt.replace(year=dt.year + n, month=3, day=1)
+
+
+def classify(rows, year, lookback, new_product_years=NEW_PRODUCT_YEARS):
+    """เพิ่ม category ให้ทุกบรรทัดของปี `year`
+
+    NC   : ลูกค้าไม่มีบิลเลยในปี year-lookback ถึง year-1
+    OCNP : ลูกค้าเก่า และซื้อ P-line นี้ภายใน new_product_years ปีนับจากวันที่ซื้อ P-line นี้ครั้งแรก
+           (ซื้อครั้งแรก 15 ธ.ค. 2025 -> OCNP ถึง 14 ธ.ค. 2027) — ดูประวัติจากข้อมูลทั้งไฟล์
+    OCOP : ลูกค้าเก่า ที่เหลือ"""
     hist_years = set(range(year - lookback, year))
-    hist_customers, hist_cust_pline = set(), set()
+    hist_customers = set()
+    first_buy = {}
     for r in rows:
         if r["date"].year in hist_years:
             hist_customers.add(r["customer"])
-            hist_cust_pline.add((r["customer"], r["pline"]))
+        key = (r["customer"], r["pline"])
+        if key not in first_buy or r["date"] < first_buy[key]:
+            first_buy[key] = r["date"]
     out = []
     for r in rows:
         if r["date"].year != year:
             continue
+        first = first_buy[(r["customer"], r["pline"])]
         if r["customer"] not in hist_customers:
             cat = "NC"
-        elif (r["customer"], r["pline"]) not in hist_cust_pline:
+        elif r["date"] < add_years(first, new_product_years):
             cat = "OCNP"
         else:
             cat = "OCOP"
-        out.append({**r, "category": cat})
+        out.append({**r, "category": cat, "first_buy": first})
     return out
 
 
@@ -431,6 +451,10 @@ def compute_cbg(sales_path, cfg, year, tiers, new_products, eligible=None):
     missing = [y for y in range(year - lookback, year) if y not in years_in_file]
     if missing:
         warnings.append(f"ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
+    start = min(r["date"] for r in rows)
+    if start > add_years(datetime(year, 1, 1), -NEW_PRODUCT_YEARS):
+        warnings.append(f"ข้อมูลในไฟล์เริ่ม {start:%Y-%m-%d} — สินค้าที่ลูกค้าซื้อมาก่อนวันนั้นจะดูเหมือนซื้อครั้งแรกในไฟล์ "
+                        f"จึงอาจถูกนับเป็น OCNP เกินจริง (ควรมีข้อมูลตั้งแต่ 1 ม.ค. {year - NEW_PRODUCT_YEARS} หรือก่อนหน้า)")
 
     margin_col = cfg["columns"].get("margin")
     if not margin_col or margin_col not in header:

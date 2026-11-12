@@ -66,7 +66,9 @@ def table_specs(code):
     """คืน list ของ (key, ชื่อตาราง, คำอธิบาย, rows คงที่?, คอลัมน์ที่แก้ไม่ได้)"""
     if code == "CBG":
         return [
-            ("type_tier", "Commission % ตาม Type × Tier", "OCOP / OCNP / NC × LOW / MID / HIGH", True, ["Type"]),
+            ("type_tier", "Commission % ตาม Type × Tier",
+             "NC = ลูกค้าไม่มีบิลใน 2 ปีปฏิทินก่อนหน้า · OCNP = ลูกค้าเก่าซื้อ P-line ภายใน 2 ปีนับจากวันที่ซื้อ P-line นั้นครั้งแรก "
+             "(ดูประวัติจากทั้งไฟล์ — ควรมีข้อมูลย้อนหลังยาวพอ) · OCOP = ลูกค้าเก่าที่เหลือ", True, ["Type"]),
             ("tier_min", "MIN Margin ของแต่ละ Tier", "Margin ≥ MIN ของ Tier ไหน ได้ Tier สูงสุดนั้น; ต่ำกว่า LOW = BELOW LOW",
              True, ["Tier"]),
             ("new_product", "New Product (Flat rate ต่อ Item)", "Item ที่อยู่ในตารางนี้ได้ % ตามตาราง (ยังต้องผ่าน MIN ของ LOW)",

@@ -55,7 +55,7 @@ warning is shown.
 | Type | Rule |
 |---|---|
 | NC | Customer with no bills in the previous 2 calendar years |
-| OCNP | Existing customer, P-line not bought in the previous 2 years |
+| OCNP | Existing customer, within 2 years of the customer's **first** purchase of that P-line (first buy 15 Dec 2025 → OCNP until 14 Dec 2027). History = the whole file, so the export must go back far enough |
 | OCOP | Existing customer, existing P-line |
 
 Rows with `Item No.` = USDB or `Actual Cost(THB)` = 0 get no commission (Tier `NO COMMISSION`); they still count as purchase history. Configure in `no_commission`.
