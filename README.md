@@ -11,18 +11,29 @@ python make_rates_template.py        # first time only: creates data/rates.xlsx
 python incentive.py IC3051-3.txt     # file name inside data/
 ```
 
-## Web app (upload → calculate → download)
+## Web app — multi-company (recommended)
 ```
 pip install -r requirements-web.txt
-streamlit run app.py                      # opens http://localhost:8501
+APP_PASSWORD=... streamlit run app.py      # http://localhost:8501
 ```
-- Upload the sales export and `rates.xlsx` (if no rates file is uploaded, `data/rates.xlsx` on the
-  server is used). A blank rates template can be downloaded from the sidebar.
-- Set a password with the `APP_PASSWORD` environment variable before starting
-  (macOS/Linux: `APP_PASSWORD=... streamlit run app.py`, Windows PowerShell:
-  `$env:APP_PASSWORD="..."; streamlit run app.py`).
-- Host it on an internal machine/server or the company's cloud tenant only — the sales export
-  contains cost and margin data. Do not use public hosting.
+1. **Select company** — CBG / SAS / CM / DAP UV (SC: no rules yet).
+2. **Check / edit the rate tables** (defaults pre-filled). Edits apply to this run;
+   "บันทึกเป็นค่า default" saves them to `data/company_settings/<company>.json` (not in git).
+3. **Upload the sales export**, untick salespeople who are not eligible.
+4. **Calculate → download** `incentive_<company>_<year>.xlsx` (Sale Summary, Raw Data, Settings = rates used).
+
+| Company | Rule |
+|---|---|
+| CBG | Type (NC/OCNP/OCOP) × margin tier, New Product flat rate (see below) |
+| SAS | Material (P-class ≠ GTP) 0.01% · Machine (GTP) 1% · Machine to BU BDI 0.8% |
+| CM | Material (P-line not 5xx) 0.40% when Saleman × P-line × month sales ≥ 70% of FSA · Machine Standard (5XXXX01) / Project (5XXXX02): tier % by Saleman's monthly machine sales, applied to the whole amount · machine below MIN Price without MD approval = 0 and not counted |
+| DAP UV | Flat 0.5% |
+
+Common: rows without a Saleman (`NO SALEMAN`) and non-eligible salespeople (`NOT ELIGIBLE`) get 0.
+SAS / CM / DAP UV also use the `payment` columns in `config.yaml` (paid date, MD approval): unpaid rows
+= `UNPAID`; Payout Month = Invoice + 4 months (materials) or paid date (machines: before the 20th →
+same month, otherwise next month). If the paid-date column is missing, all invoices are counted and a
+warning is shown.
 
 ## Configure
 1. **`data/rates.xlsx`** — create it with `python make_rates_template.py`, then fill in every yellow cell before running (values can differ per company):

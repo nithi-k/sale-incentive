@@ -1,4 +1,4 @@
-"""คำนวณ Sales Incentive จากไฟล์ CSV ยอดขายย
+"""คำนวณ Sales Incentive (กฎของ CBG) จากไฟล์ยอดขาย
 
 ประเภทยอดขาย (ปีที่คำนวณ = Y, เช็คย้อนหลังปี Y-1 ถึง Y-lookback):
   NC   ลูกค้าใหม่              : ลูกค้าไม่มีบิลเลยในช่วงย้อนหลัง
@@ -111,6 +111,17 @@ def classify(rows, year, lookback):
 CATEGORIES = ["OCOP", "OCNP", "NC"]
 BELOW = "BELOW LOW"
 NO_COMM = "NO COMMISSION"
+NOT_ELIGIBLE = "NOT ELIGIBLE"
+NO_SALEMAN = "NO SALEMAN"
+
+
+def no_saleman_warning(detail):
+    """แถวที่ไม่มีรหัส Saleman — ไม่มีผู้รับ จึงไม่คิด Commission"""
+    rows = [d for d in detail if d["tier"] == NO_SALEMAN]
+    if not rows:
+        return None
+    return (f"มี {len(rows):,} แถวที่ไม่มีรหัส Saleman (ยอดขาย ฿{sum(d['amount'] for d in rows):,.2f}) "
+            "— ไม่ได้ Commission (Tier = NO SALEMAN)")
 NEW_PRODUCT = "NEW PRODUCT"
 
 
@@ -280,8 +291,10 @@ def to_num(v):
         return t
 
 
-def write_excel(path, year, lookback, month_names, names, monthly, col_total, raw_cols, detail, date_col=None):
-    """เขียน 1 ไฟล์ 2 ชีต: Sale Summary และ Raw Data"""
+def write_excel(path, year, lookback, month_names, names, monthly, col_total, raw_cols, detail, date_col=None,
+                title=None, settings=None):
+    """เขียนไฟล์ Excel: Sale Summary, Raw Data และ (ถ้ามี) Settings = อัตราที่ใช้ในรอบนี้
+    settings = list ของ (หัวข้อ, list ของ dict)"""
     from openpyxl import Workbook
     from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -313,7 +326,9 @@ def write_excel(path, year, lookback, month_names, names, monthly, col_total, ra
     for i in range(2, 15):
         ws.column_dimensions[get_column_letter(i)].width = 12
     ws.column_dimensions["N"].width = 14
-    ws.append([cell(ws, f"Commission ปี {year} (เช็คลูกค้า/สินค้าย้อนหลังปี {year - lookback}-{year - 1})", bold=True)])
+    if title is None:
+        title = f"Commission ปี {year} (เช็คลูกค้า/สินค้าย้อนหลังปี {year - lookback}-{year - 1})"
+    ws.append([cell(ws, title, bold=True)])
     ws.append([cell(ws, h, head=True) for h in ["Saleman"] + month_names + ["Total"]])
     for n in names:
         ws.append([cell(ws, n)] + [cell(ws, round(v, 2), money) for v in monthly[n]]
@@ -332,8 +347,7 @@ def write_excel(path, year, lookback, month_names, names, monthly, col_total, ra
     ws.append([cell(ws, h, head=True) for h in raw_cols])
     numeric = {h for h in raw_cols if is_numeric_col(h)}
     for d in detail:
-        vals = {**d["raw"], "Month": d["date"].month, "Year": d["date"].year, "Type": d["category"],
-                "Commission Tier": d["tier"]}
+        vals = {**d["raw"], "Month": d["date"].month, "Year": d["date"].year, **d.get("out", {})}
         row = []
         for h in raw_cols:
             if h == date_col:
@@ -351,6 +365,26 @@ def write_excel(path, year, lookback, month_names, names, monthly, col_total, ra
                 v = vals.get(h)
                 row.append(cell_str(v) if v is not None else None)
         ws.append(row)
+
+    # ชีต 3: Settings — อัตรา/ค่าที่ใช้คำนวณรอบนี้ (ย้อนตรวจได้)
+    if settings:
+        ws = wb.create_sheet("Settings")
+        ws.column_dimensions["A"].width = 28
+        for i in range(2, 10):
+            ws.column_dimensions[get_column_letter(i)].width = 18
+        for name, rows in settings:
+            ws.append([cell(ws, name, bold=True)])
+            if rows:
+                cols = list(rows[0].keys())
+                ws.append([cell(ws, c, head=True) for c in cols])
+                for r in rows:
+                    out = []
+                    for c in cols:
+                        v = r.get(c)
+                        pct = "%" in c and isinstance(v, (int, float)) and not isinstance(v, bool)
+                        out.append(cell(ws, v, "0.000%") if pct else v)
+                    ws.append(out)
+            ws.append([])
     wb.save(path)
 
 
@@ -375,9 +409,17 @@ MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "O
 
 
 def compute(sales_path, rates_path, cfg, year=None):
-    """แกนคำนวณ — ใช้ร่วมกันทั้ง CLI และหน้าเว็บ
+    """CLI: อ่านอัตราจาก rates.xlsx แล้วคำนวณตามกฎ CBG"""
+    return compute_cbg(sales_path, cfg, year, load_rates(rates_path), load_new_products(rates_path))
+
+
+def compute_cbg(sales_path, cfg, year, tiers, new_products, eligible=None):
+    """แกนคำนวณกฎ CBG — ใช้ร่วมกันทั้ง CLI และหน้าเว็บ
+    tiers = [{name, min, rates{Type: rate}}], new_products = {ITEM: rate}
+    eligible = set ของรหัส Saleman ที่มีสิทธิ์ (None = ทุกคน)
     คืนค่า dict ผลลัพธ์ หรือ raise SystemExit พร้อมข้อความเมื่อข้อมูลไม่ถูกต้อง"""
     warnings = []
+    tiers = sorted(tiers, key=lambda t: t["min"])
     rows, header = load_sales(sales_path, cfg["columns"], cfg.get("delimiter"))
     excluded = set(cfg.get("exclude_plines") or [])
     rows = [r for r in rows if r["pline"] not in excluded]
@@ -390,8 +432,6 @@ def compute(sales_path, rates_path, cfg, year=None):
     if missing:
         warnings.append(f"ไม่มีข้อมูลปี {missing} ในไฟล์ — ลูกค้าอาจถูกนับเป็น NC เกินจริง")
 
-    tiers = load_rates(rates_path)
-    new_products = load_new_products(rates_path)
     margin_col = cfg["columns"].get("margin")
     if not margin_col or margin_col not in header:
         raise SystemExit(f"❌ ไม่พบคอลัมน์ Margin '{margin_col}' ในไฟล์ยอดขาย")
@@ -416,6 +456,12 @@ def compute(sales_path, rates_path, cfg, year=None):
         raise SystemExit(f"❌ ไม่มียอดขายของปี {year} ในไฟล์")
     problems = []
     for d in detail:
+        if not d["salesperson"]:
+            d["tier"], d["rate"], d["incentive"] = NO_SALEMAN, 0.0, 0.0
+            continue
+        if eligible is not None and d["salesperson"] not in eligible:
+            d["tier"], d["rate"], d["incentive"] = NOT_ELIGIBLE, 0.0, 0.0
+            continue
         if no_commission(d):
             d["tier"], d["rate"], d["incentive"] = NO_COMM, 0.0, 0.0
             continue
@@ -434,6 +480,11 @@ def compute(sales_path, rates_path, cfg, year=None):
         d["incentive"] = round(d["amount"] * d["rate"], 2) + 0.0  # +0.0 กัน -0.0
     if problems:
         raise SystemExit(f"❌ มี {len(problems)} แถวที่หาอัตราไม่ได้ (ตัวอย่าง):\n  " + "\n  ".join(problems[:10]))
+    for d in detail:
+        d["out"] = {"Type": d["category"], "Commission Tier": d["tier"]}
+    w = no_saleman_warning(detail)
+    if w:
+        warnings.append(w)
 
     # ---- คอลัมน์ของชีต Raw Data ----
     # ไม่แสดงตัวเลข Margin จริงและต้นทุน — Sale เห็นแค่ Tier
@@ -450,10 +501,11 @@ def compute(sales_path, rates_path, cfg, year=None):
     # ---- ข้อมูลชีต Sale Summary ----
     monthly = defaultdict(lambda: [0.0] * 12)
     for d in detail:
-        monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
+        if d["salesperson"]:
+            monthly[d["salesperson"]][d["date"].month - 1] += d["incentive"]
     names = sorted(monthly)
     col_total = [sum(monthly[n][m] for n in names) for m in range(12)]
-    return {"year": year, "lookback": lookback, "warnings": warnings, "names": names,
+    return {"year": year, "lookback": lookback, "warnings": warnings, "names": names, "title": None,
             "monthly": dict(monthly), "col_total": col_total, "raw_cols": out_header + extra,
             "detail": detail, "date_col": date_col}
 
@@ -461,7 +513,8 @@ def compute(sales_path, rates_path, cfg, year=None):
 def save_excel(res, path):
     """บันทึกผลเป็น Excel (path เป็นชื่อไฟล์ หรือ BytesIO ก็ได้)"""
     write_excel(path, res["year"], res["lookback"], MONTH_NAMES, res["names"], res["monthly"],
-                res["col_total"], res["raw_cols"], res["detail"], res["date_col"])
+                res["col_total"], res["raw_cols"], res["detail"], res["date_col"],
+                title=res.get("title"), settings=res.get("settings"))
 
 
 def main():
@@ -486,10 +539,10 @@ def main():
 
     year, lookback = res["year"], res["lookback"]
     print(f"Incentive ปี {year} (เช็คย้อนหลังปี {year - lookback}-{year - 1})\n")
-    print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in MONTH_NAMES) + f"{'Total':>11}")
+    print(f"{'Saleman':<10}" + "".join(f"{m:>9}" for m in MONTH_NAMES) + f"{'Total':>14}")
     for n in res["names"] + ["Total"]:
         vals = res["col_total"] if n == "Total" else res["monthly"][n]
-        print(f"{n:<10}" + "".join(f"{v:>9,.0f}" for v in vals) + f"{sum(vals):>11,.2f}")
+        print(f"{n:<10}" + "".join(f"{v:>9,.0f}" for v in vals) + f"{sum(vals):>14,.2f}")
     print(f"\nบันทึกไฟล์ {out_file}")
 
 

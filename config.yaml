@@ -6,6 +6,16 @@ columns:
   pline: P-line
   amount: Net Price (THB)   # ยอดก่อน VAT
   margin: PGross            # Margin ของแต่ละแถว
+  product_class: P-class    # SAS: GTP = เครื่องจักร
+  bu: BU                    # SAS: BDI = ตัวแทนจำหน่าย
+  qty: Qty                  # CM: ราคาต่อหน่วย = Net Price / Qty
+  min_price: MIN Price      # CM: เครื่องจักรต้องขายไม่ต่ำกว่า MIN Price
+
+# ข้อมูลการรับชำระ (SAS / CM / DAP UV) — แก้ชื่อคอลัมน์ให้ตรงเมื่อ Sale Report มีคอลัมน์ใหม่
+# ถ้าไม่พบคอลัมน์ในไฟล์: คิดจากยอด Invoice ทั้งหมด และแจ้งเตือนในหน้าเว็บ
+payment:
+  paid_date_column: Paid Date          # วันที่ชำระครบ (ผ่อนเป็นงวด = วันที่ชำระงวดสุดท้าย); ว่าง = ยังไม่ชำระ
+  md_approval_column: Approve By       # CM: มีค่า = MD อนุมัติขายต่ำกว่า MIN Price แล้ว
 
 # ตัวคั่นคอลัมน์ของไฟล์ .txt
 delimiter: "|"
