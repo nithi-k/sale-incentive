@@ -3,3 +3,11 @@ toolbarMode = "minimal"   # ซ่อนปุ่ม Deploy / เมนูนั
 
 [server]
 maxUploadSize = 200       # MB
+
+[theme]                   # สีตามเว็บไซต์ chaiyaboon.com
+base = "light"
+primaryColor = "#BA0D1B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#FAFAFA"
+textColor = "#1D1B1C"
+font = "sans serif"

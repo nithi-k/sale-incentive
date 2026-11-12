@@ -16,9 +16,11 @@ import streamlit as st
 
 import companies
 import incentive as core
+import theme
 
 APP_DIR = Path(__file__).resolve().parent
-st.set_page_config(page_title="Sales Commission", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Sales Commission | Chaiyaboon", page_icon="🔴", layout="wide")
+theme.apply()
 
 # คอลัมน์ของตารางที่อาจว่างตั้งแต่แรก
 EMPTY_COLUMNS = {
@@ -33,7 +35,7 @@ def check_password():
     pw = os.environ.get("APP_PASSWORD")
     if not pw or st.session_state.get("authed"):
         return True
-    st.title("💰 Sales Commission")
+    theme.banner("Sales Commission", "กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน")
     entered = st.text_input("รหัสผ่าน", type="password")
     if entered:
         if entered == pw:
@@ -75,11 +77,12 @@ if not check_password():
 
 cfg = core.load_config(APP_DIR / "config.yaml")
 
-st.title("💰 Sales Commission")
-st.caption("① เลือกบริษัท → ② ตรวจ/แก้อัตรา → ③ อัปโหลดไฟล์ยอดขาย → ④ คำนวณและดาวน์โหลด Excel")
+theme.banner("Sales Commission",
+             "① เลือกบริษัท → ② ตรวจ/แก้อัตรา → ③ อัปโหลดไฟล์ยอดขาย → ④ คำนวณและดาวน์โหลด Excel")
 
 # ---------------------------------------------------------------- ① บริษัท
-code = st.selectbox("① บริษัท", list(companies.COMPANIES), format_func=lambda c: f"{c} — {companies.COMPANIES[c]}")
+st.subheader("① บริษัท")
+code = st.selectbox("บริษัท", label_visibility="collapsed", options=list(companies.COMPANIES), format_func=lambda c: f"{c} — {companies.COMPANIES[c]}")
 if not companies.table_specs(code):
     st.info(f"{code}: ยังไม่มีข้อกำหนดการคำนวณ")
     st.stop()
@@ -193,3 +196,5 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
     st.dataframe([{"Commission Tier": k, "แถว": v, "Commission (THB)": round(amt[k], 2)}
                   for k, v in agg.most_common()], hide_index=True,
                  column_config={"Commission (THB)": st.column_config.NumberColumn(format="localized")})
+
+theme.footer()
