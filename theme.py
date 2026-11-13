@@ -35,7 +35,9 @@ section[data-testid="stSidebar"] .block-container, section[data-testid="stSideba
     letter-spacing:.08em; font-size:1.1rem; white-space:nowrap; }}
 .logo-box img {{ position:relative; height:38px; background:#fff; border-radius:999px; }}
 .side-label {{ font-size:.7rem; font-weight:600; color:#A39C9E; letter-spacing:.08em; text-transform:uppercase; margin: .9rem 0 .35rem .35rem; }}
-section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 2px; }}
+section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 2px; width: 100%; }}
+section[data-testid="stSidebar"] [role="radiogroup"] > div {{ width: 100%; }}
+section[data-testid="stSidebar"] [role="radiogroup"] label {{ display: flex; box-sizing: border-box; }}
 section[data-testid="stSidebar"] [role="radiogroup"] label {{
     padding: .5rem .7rem; border-radius: 10px; width: 100%; margin: 0; cursor: pointer;
 }}
@@ -145,8 +147,11 @@ def logo_src():
 
 
 def _logo():
-    # ข้อความ CHAIYABOON อยู่ใต้รูป — ถ้าโหลดรูปไม่ได้ (ออฟไลน์) จะเห็นข้อความแทน
-    return f'<span class="logo-box"><span class="alt">CHAIYABOON</span><img src="{logo_src()}" alt=""></span>'
+    src = logo_src()
+    if src.startswith("data:"):  # มีไฟล์โลโก้ในเครื่อง — แสดงรูปอย่างเดียว
+        return f'<span class="logo-box"><img src="{src}" alt="CHAIYABOON"></span>'
+    # โหลดจากเว็บ: ข้อความ CHAIYABOON อยู่ใต้รูป — ถ้าโหลดรูปไม่ได้ (ออฟไลน์) จะเห็นข้อความแทน
+    return f'<span class="logo-box"><span class="alt">CHAIYABOON</span><img src="{src}" alt=""></span>'
 
 
 def sidebar_logo():
@@ -184,6 +189,44 @@ def kpis(items):
     cells = "".join(f'<div class="kpi{" main" if main else ""}"><div class="k">{html.escape(k)}</div>'
                     f'<div class="v">{html.escape(v)}</div></div>' for k, v, main in items)
     st.markdown(f'<div class="kpis">{cells}</div>', unsafe_allow_html=True)
+
+
+COMPANY_LOGOS = {  # ไฟล์ใน assets/ (ดาวน์โหลดจาก chaiyaboon.com)
+    "CBG": "cbg-logo.png", "SAS": "logo-SAS.jpg", "CM": "logo-CM.jpg",
+    "DAP UV": "logo-DAP_UV.jpg", "SC": "logo-SC.jpg",
+}
+
+
+def _data_uri(path):
+    mime = "image/png" if path.suffix == ".png" else "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+def company_nav_css(codes):
+    """ใส่โลโก้บริษัทหน้าชื่อในเมนูซ้าย (ตามลำดับตัวเลือกของ radio) + ตัวย่อบริษัทใต้ชื่อ"""
+    rules = []
+    for i, code in enumerate(codes, start=1):
+        # ตัวเลือก radio แต่ละอันถูกห่อด้วย div แยกกัน จึงจับจากค่าของ input (0, 1, 2, ...) แทนลำดับ label
+        sels = [f'section[data-testid="stSidebar"] [role="radiogroup"] label:has(input[value="{i - 1}"]) p',
+                f'section[data-testid="stSidebar"] [role="radiogroup"] > div:nth-child({i}) label p']
+        f = ASSETS / COMPANY_LOGOS.get(code, "")
+        logo = f"background-image:url('{_data_uri(f)}');" if f.is_file() else ""
+        rules.append(", ".join(f"{x}::before" for x in sels) + f" {{ {logo} }}")
+        rules.append(", ".join(f"{x}::after" for x in sels) + f' {{ content:"{code}"; }}')
+    st.markdown(f"""<style>
+section[data-testid="stSidebar"] [role="radiogroup"] label p {{
+    position:relative; padding-left:54px; min-height:36px; display:flex; flex-direction:column; justify-content:center;
+    line-height:1.2; }}
+section[data-testid="stSidebar"] [role="radiogroup"] label p::before {{
+    content:""; position:absolute; left:0; top:50%; transform:translateY(-50%); width:44px; height:32px;
+    border-radius:8px; background-color:#fff; border:1px solid {LINE};
+    background-size:contain; background-repeat:no-repeat; background-position:center; }}
+section[data-testid="stSidebar"] [role="radiogroup"] label p::after {{
+    font-size:.7rem; color:#A39C9E; font-weight:500; margin-top:2px; letter-spacing:.04em; }}
+section[data-testid="stSidebar"] [role="radiogroup"] label[data-selected="true"] p::before,
+section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p::before {{ border-color:{RED}; }}
+{chr(10).join(rules)}
+</style>""", unsafe_allow_html=True)
 
 
 def footer():

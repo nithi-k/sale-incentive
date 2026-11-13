@@ -1,1 +1,2 @@
-วางไฟล์โลโก้บริษัทชื่อ cbg-logo.png ไว้ที่นี่ (ไม่บังคับ — ถ้าไม่มี จะโหลดจาก chaiyaboon.com)
+โลโก้บริษัทในเครือ (จาก chaiyaboon.com) ใช้ในแถบเมนูของหน้าเว็บ — ทำงานได้แม้ไม่มีอินเทอร์เน็ต
+cbg-logo.png, logo-SAS.jpg, logo-CM.jpg, logo-DAP_UV.jpg, logo-SC.jpg

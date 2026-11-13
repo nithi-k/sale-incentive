@@ -107,14 +107,17 @@ cfg = core.load_config(APP_DIR / "config.yaml")
 # ---------------------------------------------------------------- sidebar
 theme.sidebar_logo()
 theme.side_label("บริษัท")
-code = st.sidebar.radio("บริษัท", list(companies.COMPANIES), label_visibility="collapsed")
+theme.company_nav_css(list(companies.COMPANIES))
+code = st.sidebar.radio("บริษัท", list(companies.COMPANIES), label_visibility="collapsed",
+                        format_func=lambda c: companies.COMPANY_NAMES.get(c, c))
 theme.side_label("วิธีคิด")
 theme.side_help(RULE_HELP.get(code, ""))
 
 # ---------------------------------------------------------------- page head
 head_l, head_r = st.columns([3, 2], vertical_alignment="bottom")
 with head_l:
-    theme.page_head(["Sales Commission", code], f"{code} Commission", [companies.COMPANIES[code]])
+    theme.page_head(["Sales Commission", code], f"{companies.COMPANY_NAMES.get(code, code)}",
+                    [f"{code} Commission", companies.COMPANIES[code]])
 specs = companies.table_specs(code)
 if not specs:
     st.info(f"{code}: ยังไม่มีข้อกำหนดการคำนวณ")

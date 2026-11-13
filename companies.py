@@ -99,6 +99,15 @@ COMPANIES = {
     "SC": "ยังไม่มีข้อกำหนด",
 }
 
+# ชื่อเต็มของบริษัทในเครือ (แสดงในเมนู)
+COMPANY_NAMES = {
+    "CBG": "Chaiyaboon Brothers",
+    "SAS": "Sahasticker",
+    "CM": "Chaiscreen Machinery",
+    "DAP UV": "DAP U.V.",
+    "SC": "Silkcut",
+}
+
 
 def load_settings(code):
     """ค่าที่บันทึกไว้ (ถ้ามี) ไม่งั้นใช้ default; คืน (tables, eligible dict)"""
