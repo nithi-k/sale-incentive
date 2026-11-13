@@ -47,8 +47,8 @@ RULE_HELP = {
     "CM": "<b>กฎ</b><br>วัสดุ: ยอด Saleman × P-line × เดือน ต้องถึง % ของ FSA<br>"
           "เครื่องจักร: ขั้นบันไดตามยอดต่อเดือน ใช้ % กับยอดทั้งก้อน<br>ต่ำกว่า MIN Price ต้องมี MD อนุมัติ",
     "DAP UV": "<b>กฎ</b><br>Flat rate ทุกสินค้า",
-    "SC": "ยังไม่มีข้อกำหนด",
 }
+RULE_HELP["SC"] = RULE_HELP["CBG"]  # Silkcut ใช้กฎเดียวกับ CBG
 
 
 def check_password():

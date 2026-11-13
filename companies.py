@@ -11,6 +11,8 @@ from pathlib import Path
 import incentive as core
 
 SETTINGS_DIR = Path(__file__).resolve().parent / "data" / "company_settings"
+# บริษัทที่ใช้กฎแบบ CBG (Type × Margin Tier + New Product) — อัตราของแต่ละบริษัทแยกกัน
+CBG_RULES = ("CBG", "SC")
 
 # ---------------------------------------------------------------- ตาราง default
 def _cbg_defaults():
@@ -37,7 +39,7 @@ def _cbg_defaults():
 
 
 def _defaults(code):
-    if code == "CBG":
+    if code in CBG_RULES:
         d = _cbg_defaults()
         d.pop("_tier_names")
         return d
@@ -64,7 +66,7 @@ def _defaults(code):
 # ---------------------------------------------------------------- นิยามตารางสำหรับหน้าเว็บ
 def table_specs(code):
     """คืน list ของ (key, ชื่อตาราง, คำอธิบาย, rows คงที่?, คอลัมน์ที่แก้ไม่ได้)"""
-    if code == "CBG":
+    if code in CBG_RULES:
         return [
             ("type_tier", "Commission % ตาม Type × Tier",
              "NC = ลูกค้าไม่มีบิลใน 2 ปีปฏิทินก่อนหน้า · OCNP = ลูกค้าเก่าซื้อ P-line ภายใน 2 ปีนับจากวันที่ซื้อ P-line นั้นครั้งแรก "
@@ -96,7 +98,7 @@ COMPANIES = {
     "SAS": "Flat rate: วัสดุ / เครื่องจักร / เครื่องจักร BDI",
     "CM": "วัสดุ (ต้องถึง FSA) + เครื่องจักรขั้นบันไดรายเดือน",
     "DAP UV": "Flat rate",
-    "SC": "ยังไม่มีข้อกำหนด",
+    "SC": "Type (NC/OCNP/OCOP) × Margin Tier + New Product (กฎเดียวกับ CBG)",
 }
 
 # ชื่อเต็มของบริษัทในเครือ (แสดงในเมนู)
@@ -177,7 +179,7 @@ def _add_months(dt, n):
 # ---------------------------------------------------------------- คำนวณ
 def compute(code, sales_path, cfg, tables, year=None, eligible=None):
     """คำนวณ Commission ตามกฎของบริษัท คืน dict ผลลัพธ์ (รูปแบบเดียวกับ incentive.compute_cbg)"""
-    if code == "CBG":
+    if code in CBG_RULES:
         tiers, newp = cbg_from_tables(tables)
         res = core.compute_cbg(sales_path, cfg, year, tiers, newp, eligible)
     elif code in ("SAS", "CM", "DAP UV"):

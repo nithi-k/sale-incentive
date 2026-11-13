@@ -16,7 +16,7 @@ python incentive.py IC3051-3.txt     # file name inside data/
 pip install -r requirements-web.txt
 APP_PASSWORD=... streamlit run app.py      # http://localhost:8501
 ```
-1. **Select company** — CBG / SAS / CM / DAP UV (SC: no rules yet).
+1. **Select company** — CBG / SAS / CM / DAP UV / SC (Silkcut uses the CBG rules).
 2. **Check / edit the rate tables** (defaults pre-filled). Edits apply to this run;
    "บันทึกเป็นค่า default" saves them to `data/company_settings/<company>.json` (not in git).
 3. **Upload the sales export**, untick salespeople who are not eligible.
@@ -28,6 +28,7 @@ APP_PASSWORD=... streamlit run app.py      # http://localhost:8501
 | SAS | Material (P-class ≠ GTP) 0.01% · Machine (GTP) 1% · Machine to BU BDI 0.8% |
 | CM | Material (P-line not 5xx) 0.40% when Saleman × P-line × month sales ≥ 70% of FSA · Machine Standard (5XXXX01) / Project (5XXXX02): tier % by Saleman's monthly machine sales, applied to the whole amount · machine below MIN Price without MD approval = 0 and not counted |
 | DAP UV | Flat 0.5% |
+| SC (Silkcut) | Same rules as CBG (own rate tables / saved defaults) |
 
 Common: rows without a Saleman (`NO SALEMAN`) and non-eligible salespeople (`NOT ELIGIBLE`) get 0.
 SAS / CM / DAP UV also use the `payment` columns in `config.yaml` (paid date, MD approval): unpaid rows
