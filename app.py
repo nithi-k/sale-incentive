@@ -30,6 +30,14 @@ except ValueError:
     _ST_VER = (0, 0)
 MONEY_FMT = "localized" if _ST_VER >= (1, 43) else "%.2f"
 
+def money_table(rows, money_cols, pct_cols=()):
+    """ตารางแสดงผล: ตัวเลขมีคอมม่าคั่นหลักพัน (ใช้ pandas Styler — รองรับ Streamlit ทุกรุ่น และยังเรียงตามตัวเลขได้)"""
+    df = pd.DataFrame(rows)
+    fmt = {c: "{:,.2f}" for c in money_cols if c in df.columns}
+    fmt.update({c: "{:.3f}" for c in pct_cols if c in df.columns})
+    return df.style.format(fmt, na_rep="")
+
+
 # คอลัมน์ของตารางที่อาจว่างตั้งแต่แรก
 EMPTY_COLUMNS = {
     "new_product": ["Item No.", "Commission (%)"],
@@ -146,6 +154,9 @@ if reset_clicked:
     st.rerun()
 if skey not in st.session_state:
     st.session_state[skey] = companies.load_settings(code)
+if "saleman_names" not in st.session_state:
+    st.session_state["saleman_names"] = companies.load_saleman_names()
+saleman_names = st.session_state["saleman_names"]
 tables, saved_eligible = st.session_state[skey]
 
 # ---------------------------------------------------------------- อัตรา
@@ -186,12 +197,25 @@ with st.container(border=False, key="card_upload"):
         found = salesmen_in_file(sales_file.getvalue(), Path(sales_file.name).name,
                                  cfg.get("delimiter"), cfg["columns"]["salesperson"])
         n_off = sum(1 for s in found if not saved_eligible.get(s, True))
-        with st.expander(f"Saleman ที่มีสิทธิ์รับ Commission · {len(found) - n_off}/{len(found)} คน"):
-            st.caption("เอาเครื่องหมายออกสำหรับคนที่ไม่มีสิทธิ์ · จำค่าไว้เมื่อกด 'บันทึกเป็นค่า default'")
-            el_df = pd.DataFrame([{"Saleman": s, "มีสิทธิ์": bool(saved_eligible.get(s, True))} for s in found])
+        n_named = sum(1 for s in found if saleman_names.get(s))
+        with st.expander(f"รายชื่อ Saleman · มีชื่อ {n_named}/{len(found)} · มีสิทธิ์รับ Commission {len(found) - n_off}/{len(found)}",
+                         expanded=n_named < len(found)):
+            st.caption("กรอกชื่อ (วางจาก Excel ได้) — ชื่อใช้ร่วมกันทุกบริษัทและจำไว้อัตโนมัติ · "
+                       "เอาเครื่องหมายออกสำหรับคนที่ไม่มีสิทธิ์ (จำเมื่อกด 'บันทึกเป็นค่า default')")
+            el_df = pd.DataFrame([{"Saleman": s, "ชื่อ": saleman_names.get(s, ""),
+                                   "มีสิทธิ์": bool(saved_eligible.get(s, True))} for s in found])
             el_df = st.data_editor(el_df, key=f"el_{code}_{hashlib.md5(sales_file.getvalue()[:4096]).hexdigest()}",
-                                   hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Saleman"])
+                                   hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Saleman"],
+                                   column_config={"ชื่อ": st.column_config.TextColumn("ชื่อ", width="large"),
+                                                  "มีสิทธิ์": st.column_config.CheckboxColumn("มีสิทธิ์", width="small")})
             eligible_rows = el_df.to_dict("records")
+            edited_names = {r["Saleman"]: (r.get("ชื่อ") or "").strip() for r in eligible_rows
+                            if isinstance(r.get("ชื่อ"), str)}
+            if any(saleman_names.get(k, "") != v for k, v in edited_names.items()):
+                saleman_names = {**saleman_names, **edited_names}
+                companies.save_saleman_names(saleman_names)  # จำชื่อทันที
+                st.session_state["saleman_names"] = companies.load_saleman_names()
+                saleman_names = st.session_state["saleman_names"]
 
 if save_clicked:
     elig_map = dict(saved_eligible)
@@ -208,6 +232,7 @@ if run:
         sp.write_bytes(sales_file.getvalue())
         try:
             res = companies.compute(code, sp, cfg, edited, None, eligible)  # ปีล่าสุดในไฟล์เสมอ
+            companies.attach_saleman_names(res, saleman_names, cfg["columns"]["salesperson"])
             buf = io.BytesIO()
             core.save_excel(res, buf)
         except SystemExit as e:
@@ -246,37 +271,40 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         t1, t2, t3 = st.tabs(["Sale Summary", "Commission Tier", "รายการ"])
         with t1:
-            table = [{"Saleman": n, **{m: round(v, 2) for m, v in zip(core.MONTH_NAMES, res["monthly"][n])},
+            nm = res.get("saleman_names") or saleman_names
+            table = [{"Saleman": n, "ชื่อ": nm.get(n, ""),
+                      **{m: round(v, 2) for m, v in zip(core.MONTH_NAMES, res["monthly"][n])},
                       "Total": round(sum(res["monthly"][n]), 2)} for n in res["names"]]
-            table.append({"Saleman": "Total", **{m: round(v, 2) for m, v in zip(core.MONTH_NAMES, res["col_total"])},
+            table.append({"Saleman": "Total", "ชื่อ": "",
+                          **{m: round(v, 2) for m, v in zip(core.MONTH_NAMES, res["col_total"])},
                           "Total": round(total, 2)})
-            st.dataframe(table, hide_index=True, use_container_width=True,
-                         column_config={k: st.column_config.NumberColumn(format=MONEY_FMT)
-                                        for k in core.MONTH_NAMES + ["Total"]})
+            st.dataframe(money_table(table, core.MONTH_NAMES + ["Total"]), hide_index=True, use_container_width=True,
+                         column_config={"ชื่อ": st.column_config.TextColumn("ชื่อ", width="medium")})
         cnt, amt = Counter(), Counter()
         for d in detail:
             cnt[d["tier"]] += 1
             amt[d["tier"]] += d["incentive"]
         with t2:
-            st.dataframe([{"Commission Tier": tier_label(k), "แถว": v, "Commission (THB)": round(amt[k], 2)}
-                          for k, v in cnt.most_common()], hide_index=True, use_container_width=True,
-                         column_config={"Commission (THB)": st.column_config.NumberColumn(format=MONEY_FMT)})
+            st.dataframe(money_table([{"Commission Tier": tier_label(k), "แถว": f"{v:,}", "Commission (THB)": round(amt[k], 2)}
+                                      for k, v in cnt.most_common()], ["Commission (THB)"]),
+                         hide_index=True, use_container_width=True)
         with t3:
             opts = ["ทั้งหมด"] + [k for k, _ in cnt.most_common()]
             pick = st.radio("กรอง", opts, horizontal=True, label_visibility="collapsed",
                             format_func=lambda o: f"{o} · {len(detail) if o == 'ทั้งหมด' else cnt[o]:,}")
             rows = [d for d in detail if pick == "ทั้งหมด" or d["tier"] == pick]
             raw = lambda d, c: core.cell_str(d["raw"].get(c))
-            st.dataframe([{
+            nm = res.get("saleman_names") or saleman_names
+            st.dataframe(money_table([{
                 "วันที่": d["date"].strftime("%Y-%m-%d"), "Invoice": raw(d, "Invoice No."),
-                "Saleman": d["salesperson"], "ลูกค้า": raw(d, "Customer Name") or d["customer"],
+                "Saleman": d["salesperson"], "ชื่อ Saleman": nm.get(d["salesperson"], ""),
+                "ลูกค้า": raw(d, "Customer Name") or d["customer"],
                 "P-line": d["pline"], "ยอดขาย": round(d["amount"], 2),
                 "ประเภท": d["out"].get("Type") or d["out"].get("Product Group"),
                 "Tier": tier_label(d["tier"]), "%": round(d["rate"] * 100, 3), "Commission": d["incentive"],
-            } for d in rows[:1000]], hide_index=True, use_container_width=True, height=420,
-                column_config={"ยอดขาย": st.column_config.NumberColumn(format=MONEY_FMT),
-                               "Commission": st.column_config.NumberColumn(format=MONEY_FMT),
-                               "%": st.column_config.NumberColumn(format="%.3f")})
+            } for d in rows[:1000]], ["ยอดขาย", "Commission"], ["%"]),
+                hide_index=True, use_container_width=True, height=420,
+                column_config={"ชื่อ Saleman": st.column_config.TextColumn("ชื่อ Saleman", width="medium")})
             if len(rows) > 1000:
                 st.caption(f"แสดง 1,000 จาก {len(rows):,} แถว — ดูทั้งหมดในไฟล์ Excel")
 

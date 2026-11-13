@@ -312,7 +312,7 @@ def to_num(v):
 
 
 def write_excel(path, year, lookback, month_names, names, monthly, col_total, raw_cols, detail, date_col=None,
-                title=None, settings=None):
+                title=None, settings=None, saleman_names=None):
     """เขียนไฟล์ Excel: Sale Summary, Raw Data และ (ถ้ามี) Settings = อัตราที่ใช้ในรอบนี้
     settings = list ของ (หัวข้อ, list ของ dict)"""
     from openpyxl import Workbook
@@ -341,19 +341,25 @@ def write_excel(path, year, lookback, month_names, names, monthly, col_total, ra
 
     # ชีต 1: Sale Summary
     ws = wb.create_sheet("Sale Summary")
-    ws.freeze_panes = "B3"
+    sn = saleman_names or {}
+    has_names = bool(sn)
+    off = 1 if has_names else 0  # คอลัมน์ชื่อ Saleman (ถ้ามี)
+    ws.freeze_panes = "C3" if has_names else "B3"
     ws.column_dimensions["A"].width = 12
-    for i in range(2, 15):
+    if has_names:
+        ws.column_dimensions["B"].width = 26
+    for i in range(2 + off, 15 + off):
         ws.column_dimensions[get_column_letter(i)].width = 12
-    ws.column_dimensions["N"].width = 14
+    ws.column_dimensions[get_column_letter(14 + off)].width = 14
     if title is None:
         title = f"Commission ปี {year} (เช็คลูกค้า/สินค้าย้อนหลังปี {year - lookback}-{year - 1})"
     ws.append([cell(ws, title, bold=True)])
-    ws.append([cell(ws, h, head=True) for h in ["Saleman"] + month_names + ["Total"]])
+    ws.append([cell(ws, h, head=True) for h in ["Saleman"] + (["ชื่อ"] if has_names else []) + month_names + ["Total"]])
     for n in names:
-        ws.append([cell(ws, n)] + [cell(ws, round(v, 2), money) for v in monthly[n]]
+        ws.append([cell(ws, n)] + ([cell(ws, sn.get(n, ""))] if has_names else [])
+                  + [cell(ws, round(v, 2), money) for v in monthly[n]]
                   + [cell(ws, round(sum(monthly[n]), 2), money, bold=True)])
-    ws.append([cell(ws, "Total", bold=True, fill=total_fill)]
+    ws.append([cell(ws, "Total", bold=True, fill=total_fill)] + ([cell(ws, "", fill=total_fill)] if has_names else [])
               + [cell(ws, round(v, 2), money, bold=True, fill=total_fill) for v in col_total]
               + [cell(ws, round(sum(col_total), 2), money, bold=True, fill=total_fill)])
 
@@ -538,7 +544,7 @@ def save_excel(res, path):
     """บันทึกผลเป็น Excel (path เป็นชื่อไฟล์ หรือ BytesIO ก็ได้)"""
     write_excel(path, res["year"], res["lookback"], MONTH_NAMES, res["names"], res["monthly"],
                 res["col_total"], res["raw_cols"], res["detail"], res["date_col"],
-                title=res.get("title"), settings=res.get("settings"))
+                title=res.get("title"), settings=res.get("settings"), saleman_names=res.get("saleman_names"))
 
 
 def main():

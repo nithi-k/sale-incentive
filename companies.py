@@ -122,6 +122,36 @@ def load_settings(code):
     return tables, eligible
 
 
+SALESMEN_FILE = SETTINGS_DIR / "salesmen.json"
+
+
+def load_saleman_names():
+    """ชื่อ Saleman (รหัส -> ชื่อ) ใช้ร่วมกันทุกบริษัท"""
+    if SALESMEN_FILE.exists():
+        return json.loads(SALESMEN_FILE.read_text(encoding="utf-8"))
+    return {}
+
+
+def save_saleman_names(names):
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    clean = {str(k): str(v).strip() for k, v in names.items() if v and str(v).strip()}
+    SALESMEN_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def attach_saleman_names(res, names, sales_col="Saleman"):
+    """ใส่ชื่อ Saleman ในผลลัพธ์: ชีต Sale Summary และคอลัมน์ 'Saleman Name' ถัดจากรหัสในชีต Raw Data"""
+    if not names:
+        return res
+    res["saleman_names"] = names
+    cols = res["raw_cols"]
+    if "Saleman Name" not in cols:
+        i = cols.index(sales_col) + 1 if sales_col in cols else len(cols)
+        res["raw_cols"] = cols[:i] + ["Saleman Name"] + cols[i:]
+    for d in res["detail"]:
+        d.setdefault("out", {})["Saleman Name"] = names.get(d["salesperson"], "")
+    return res
+
+
 def save_settings(code, tables, eligible):
     SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     f = SETTINGS_DIR / f"{code.replace(' ', '_')}.json"
