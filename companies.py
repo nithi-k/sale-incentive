@@ -122,33 +122,29 @@ def load_settings(code):
     return tables, eligible
 
 
-SALESMEN_FILE = SETTINGS_DIR / "salesmen.json"
-
-
-def load_saleman_names():
-    """ชื่อ Saleman (รหัส -> ชื่อ) ใช้ร่วมกันทุกบริษัท"""
-    if SALESMEN_FILE.exists():
-        return json.loads(SALESMEN_FILE.read_text(encoding="utf-8"))
-    return {}
-
-
-def save_saleman_names(names):
-    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    clean = {str(k): str(v).strip() for k, v in names.items() if v and str(v).strip()}
-    SALESMEN_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+def find_name_column(header, preferred="Saleman Name"):
+    """คอลัมน์ชื่อ Saleman ใน report: ใช้ชื่อตาม config ถ้ามี ไม่งั้นหาคอลัมน์ที่มีคำว่า sale + name"""
+    if preferred in header:
+        return preferred
+    for h in header:
+        hl = h.lower().replace(" ", "")
+        if ("saleman" in hl or "salesman" in hl or "salesperson" in hl) and "name" in hl:
+            return h
+    return None
 
 
 def attach_saleman_names(res, names, sales_col="Saleman"):
-    """ใส่ชื่อ Saleman ในผลลัพธ์: ชีต Sale Summary และคอลัมน์ 'Saleman Name' ถัดจากรหัสในชีต Raw Data"""
+    """ใส่ชื่อ Saleman ในผลลัพธ์: ชีต Sale Summary และคอลัมน์ 'Saleman Name' ถัดจากรหัสในชีต Raw Data
+    (ถ้า report มีคอลัมน์ชื่ออยู่แล้ว ใน Raw Data จะใช้คอลัมน์นั้น ไม่เพิ่มซ้ำ)"""
     if not names:
         return res
     res["saleman_names"] = names
     cols = res["raw_cols"]
-    if "Saleman Name" not in cols:
+    if find_name_column(cols) is None:
         i = cols.index(sales_col) + 1 if sales_col in cols else len(cols)
         res["raw_cols"] = cols[:i] + ["Saleman Name"] + cols[i:]
-    for d in res["detail"]:
-        d.setdefault("out", {})["Saleman Name"] = names.get(d["salesperson"], "")
+        for d in res["detail"]:
+            d.setdefault("out", {})["Saleman Name"] = names.get(d["salesperson"], "")
     return res
 
 

@@ -2,6 +2,7 @@
 columns:
   date: Invoice Date        # YYYY-MM-DD
   salesperson: Saleman
+  salesperson_name: Saleman Name   # ชื่อ Saleman ใน report (ถ้าไม่มีคอลัมน์นี้ จะแสดงเฉพาะรหัส)
   customer: Customer No.
   pline: P-line
   amount: Net Price (THB)   # ยอดก่อน VAT

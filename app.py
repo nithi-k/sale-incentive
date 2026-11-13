@@ -100,14 +100,24 @@ def clean(records):
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def salesmen_in_file(data: bytes, name: str, delimiter: str, sales_col: str):
+def salesmen_in_file(data: bytes, name: str, delimiter: str, sales_col: str, name_col: str):
+    """รหัส Saleman ในไฟล์ + ชื่อ (จากคอลัมน์ชื่อใน report ถ้ามี) -> (ids, {id: ชื่อ}, ชื่อคอลัมน์ที่ใช้)"""
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / name
         p.write_bytes(data)
         header, rows = core.read_table(p, delimiter)
     if sales_col not in header:
-        return []
-    return sorted({core.cell_str(r.get(sales_col)) for r in rows} - {""})
+        return [], {}, None
+    ncol = companies.find_name_column(header, name_col)
+    names = {}
+    if ncol:
+        seen = {}
+        for r in rows:
+            sid, nm = core.cell_str(r.get(sales_col)), core.cell_str(r.get(ncol))
+            if sid and nm:
+                seen.setdefault(sid, Counter())[nm] += 1
+        names = {sid: c.most_common(1)[0][0] for sid, c in seen.items()}
+    return sorted({core.cell_str(r.get(sales_col)) for r in rows} - {""}), names, ncol
 
 
 def tier_label(t):
@@ -154,9 +164,7 @@ if reset_clicked:
     st.rerun()
 if skey not in st.session_state:
     st.session_state[skey] = companies.load_settings(code)
-if "saleman_names" not in st.session_state:
-    st.session_state["saleman_names"] = companies.load_saleman_names()
-saleman_names = st.session_state["saleman_names"]
+saleman_names = {}  # ชื่อ Saleman มาจาก report (คอลัมน์ columns.salesperson_name ใน config.yaml)
 tables, saved_eligible = st.session_state[skey]
 
 # ---------------------------------------------------------------- อัตรา
@@ -194,28 +202,21 @@ with st.container(border=False, key="card_upload"):
         st.caption("คำนวณปีล่าสุดในไฟล์ · ใช้ข้อมูลปีก่อนหน้าเป็นประวัติอ้างอิง")
         run = st.button("คำนวณ Commission", type="primary", disabled=sales_file is None, use_container_width=True)
     if sales_file is not None:
-        found = salesmen_in_file(sales_file.getvalue(), Path(sales_file.name).name,
-                                 cfg.get("delimiter"), cfg["columns"]["salesperson"])
+        found, saleman_names, name_col = salesmen_in_file(
+            sales_file.getvalue(), Path(sales_file.name).name, cfg.get("delimiter"),
+            cfg["columns"]["salesperson"], cfg["columns"].get("salesperson_name", "Saleman Name"))
         n_off = sum(1 for s in found if not saved_eligible.get(s, True))
-        n_named = sum(1 for s in found if saleman_names.get(s))
-        with st.expander(f"รายชื่อ Saleman · มีชื่อ {n_named}/{len(found)} · มีสิทธิ์รับ Commission {len(found) - n_off}/{len(found)}",
-                         expanded=n_named < len(found)):
-            st.caption("กรอกชื่อ (วางจาก Excel ได้) — ชื่อใช้ร่วมกันทุกบริษัทและจำไว้อัตโนมัติ · "
-                       "เอาเครื่องหมายออกสำหรับคนที่ไม่มีสิทธิ์ (จำเมื่อกด 'บันทึกเป็นค่า default')")
+        with st.expander(f"Saleman ที่มีสิทธิ์รับ Commission · {len(found) - n_off}/{len(found)} คน"):
+            st.caption("เอาเครื่องหมายออกสำหรับคนที่ไม่มีสิทธิ์ · จำค่าไว้เมื่อกด 'บันทึกเป็นค่า default'"
+                       + ("" if name_col else " · ยังไม่มีคอลัมน์ชื่อ Saleman ในไฟล์ — แสดงเฉพาะรหัส"))
             el_df = pd.DataFrame([{"Saleman": s, "ชื่อ": saleman_names.get(s, ""),
                                    "มีสิทธิ์": bool(saved_eligible.get(s, True))} for s in found])
             el_df = st.data_editor(el_df, key=f"el_{code}_{hashlib.md5(sales_file.getvalue()[:4096]).hexdigest()}",
-                                   hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Saleman"],
-                                   column_config={"ชื่อ": st.column_config.TextColumn("ชื่อ", width="large"),
+                                   hide_index=True, use_container_width=True, num_rows="fixed",
+                                   disabled=["Saleman", "ชื่อ"],
+                                   column_config={"ชื่อ": st.column_config.TextColumn("ชื่อ (จาก report)", width="large"),
                                                   "มีสิทธิ์": st.column_config.CheckboxColumn("มีสิทธิ์", width="small")})
             eligible_rows = el_df.to_dict("records")
-            edited_names = {r["Saleman"]: (r.get("ชื่อ") or "").strip() for r in eligible_rows
-                            if isinstance(r.get("ชื่อ"), str)}
-            if any(saleman_names.get(k, "") != v for k, v in edited_names.items()):
-                saleman_names = {**saleman_names, **edited_names}
-                companies.save_saleman_names(saleman_names)  # จำชื่อทันที
-                st.session_state["saleman_names"] = companies.load_saleman_names()
-                saleman_names = st.session_state["saleman_names"]
 
 if save_clicked:
     elig_map = dict(saved_eligible)
