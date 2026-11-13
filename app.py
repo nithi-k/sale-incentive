@@ -180,8 +180,7 @@ with st.container(border=False, key="card_upload"):
     with up_col:
         sales_file = st.file_uploader("ไฟล์ยอดขาย", type=["txt", "csv", "xlsx"], label_visibility="collapsed")
     with opt_col:
-        year = st.number_input("ปีที่คำนวณ", min_value=0, max_value=2100, value=0, step=1,
-                               help="0 = ปีล่าสุดในไฟล์")
+        st.caption("คำนวณปีล่าสุดในไฟล์ · ใช้ข้อมูลปีก่อนหน้าเป็นประวัติอ้างอิง")
         run = st.button("คำนวณ Commission", type="primary", disabled=sales_file is None, use_container_width=True)
     if sales_file is not None:
         found = salesmen_in_file(sales_file.getvalue(), Path(sales_file.name).name,
@@ -208,7 +207,7 @@ if run:
         sp = Path(tmp) / Path(sales_file.name).name
         sp.write_bytes(sales_file.getvalue())
         try:
-            res = companies.compute(code, sp, cfg, edited, int(year) or None, eligible)
+            res = companies.compute(code, sp, cfg, edited, None, eligible)  # ปีล่าสุดในไฟล์เสมอ
             buf = io.BytesIO()
             core.save_excel(res, buf)
         except SystemExit as e:
