@@ -57,7 +57,19 @@ section[data-testid="stSidebar"] label[data-selected="true"] p {{ color: {RED}; 
 .crumb {{ font-size:.8rem; color:{MUTED}; margin-bottom:.35rem; }}
 .crumb b {{ color:{INK}; font-weight:500; }}
 .page-title {{ font-size:2rem; font-weight:700; color:{INK}; margin:0; line-height:1.15; letter-spacing:-.01em; }}
-.page-meta {{ font-size:.85rem; color:{MUTED}; margin:.35rem 0 1.2rem; }}
+.page-meta {{ font-size:.85rem; color:{MUTED}; margin:.35rem 0 0; }}
+.title-row {{ display:flex; align-items:center; gap:16px; margin-bottom:1.2rem; }}
+.title-logo {{ flex:0 0 auto; width:84px; height:62px; border-radius:14px; background:#fff; border:1px solid {LINE};
+    display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 1px 2px rgba(29,27,28,.04); }}
+.title-logo img {{ max-width:100%; max-height:100%; object-fit:contain; }}
+/* หัวแถบเมนู: ชื่อระบบ */
+.app-mark {{ display:flex; align-items:center; gap:10px; }}
+.app-icon {{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,{RED},{RED_DARK});
+    color:#fff; font-weight:800; font-size:1.05rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 6px rgba(186,13,27,.25); }}
+.app-name {{ display:flex; flex-direction:column; line-height:1.15; }}
+.app-name b {{ font-size:1.02rem; color:{INK}; font-weight:700; letter-spacing:-.01em; }}
+.app-name small {{ font-size:.72rem; color:{MUTED}; margin-top:2px; }}
 .page-meta .dot {{ display:inline-block; width:4px; height:4px; border-radius:50%; background:#C9C3C4; margin:0 .5rem 2px; }}
 
 /* ---------- cards ---------- */
@@ -154,8 +166,13 @@ def _logo():
     return f'<span class="logo-box"><span class="alt">CHAIYABOON</span><img src="{src}" alt=""></span>'
 
 
-def sidebar_logo():
-    st.sidebar.markdown(f'<div class="side-logo">{_logo()}</div>', unsafe_allow_html=True)
+def sidebar_logo(title="Incentive Program", sub="Chaiyaboon Group"):
+    """หัวแถบเมนูซ้าย: ชื่อระบบ (แทนโลโก้บริษัท)"""
+    st.sidebar.markdown(
+        f'<div class="side-logo"><div class="app-mark">'
+        f'<span class="app-icon">%</span>'
+        f'<span class="app-name"><b>{html.escape(title)}</b><small>{html.escape(sub)}</small></span>'
+        f'</div></div>', unsafe_allow_html=True)
 
 
 def side_label(text):
@@ -171,12 +188,18 @@ def login_head(title, sub):
                 f'<h1>{html.escape(title)}</h1><p>{html.escape(sub)}</p></div>', unsafe_allow_html=True)
 
 
-def page_head(crumbs, title, meta):
+def page_head(crumbs, title, meta, code=None):
+    """หัวหน้าเพจ: breadcrumb, ชื่อบริษัท (มีโลโก้บริษัทประกบซ้าย), บรรทัดสรุป"""
     crumb = " / ".join(f"<b>{html.escape(c)}</b>" if i == len(crumbs) - 1 else html.escape(c)
                        for i, c in enumerate(crumbs))
     meta_html = '<span class="dot"></span>'.join(html.escape(m) for m in meta if m)
-    st.markdown(f'<div class="crumb">{crumb}</div><div class="page-title">{html.escape(title)}</div>'
-                f'<div class="page-meta">{meta_html}</div>', unsafe_allow_html=True)
+    logo = ""
+    f = ASSETS / COMPANY_LOGOS.get(code or "", "")
+    if code and f.is_file():
+        logo = f'<span class="title-logo"><img src="{_data_uri(f)}" alt="{html.escape(code)}"></span>'
+    st.markdown(f'<div class="crumb">{crumb}</div>'
+                f'<div class="title-row">{logo}<div><div class="page-title">{html.escape(title)}</div>'
+                f'<div class="page-meta">{meta_html}</div></div></div>', unsafe_allow_html=True)
 
 
 def card_head(title, sub=""):

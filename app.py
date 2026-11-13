@@ -124,7 +124,7 @@ theme.side_help(RULE_HELP.get(code, ""))
 head_l, head_r = st.columns([3, 2], vertical_alignment="bottom")
 with head_l:
     theme.page_head(["Sales Commission", code], f"{companies.COMPANY_NAMES.get(code, code)}",
-                    [f"{code} Commission", companies.COMPANIES[code]])
+                    [f"{code} Commission", companies.COMPANIES[code]], code=code)
 specs = companies.table_specs(code)
 if not specs:
     st.info(f"{code}: ยังไม่มีข้อกำหนดการคำนวณ")
