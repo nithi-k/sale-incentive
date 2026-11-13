@@ -23,6 +23,13 @@ st.set_page_config(page_title="Sales Commission | Chaiyaboon", page_icon="🔴",
                    initial_sidebar_state="expanded")
 theme.apply()
 
+# รูปแบบตัวเลขในตาราง: "localized" (มีคอมม่า) ใช้ได้ตั้งแต่ Streamlit 1.43 — รุ่นเก่า (เช่น 1.40 บน Python 3.8) ใช้ printf
+try:
+    _ST_VER = tuple(int(x) for x in st.__version__.split(".")[:2])
+except ValueError:
+    _ST_VER = (0, 0)
+MONEY_FMT = "localized" if _ST_VER >= (1, 43) else "%.2f"
+
 # คอลัมน์ของตารางที่อาจว่างตั้งแต่แรก
 EMPTY_COLUMNS = {
     "new_product": ["Item No.", "Commission (%)"],
@@ -54,7 +61,7 @@ def check_password():
     with mid:
         st.write("")
         st.write("")
-        with st.container(border=True, key="card_login"):
+        with st.container(border=False, key="card_login"):
             theme.login_head("Sales Commission", "ระบบคำนวณค่าคอมมิชชั่นพนักงานขาย")
             with st.form("login", border=False):
                 entered = st.text_input("รหัสผ่าน", type="password", placeholder="ใส่รหัสผ่าน")
@@ -143,7 +150,7 @@ tables, saved_eligible = st.session_state[skey]
 
 # ---------------------------------------------------------------- อัตรา
 edited = {}
-with st.container(border=True, key="card_rates"):
+with st.container(border=False, key="card_rates"):
     theme.card_head("อัตรา Commission", "แก้ค่าในตารางได้เลย — ใช้กับการคำนวณรอบนี้ · ค่า % กรอกเป็นตัวเลข เช่น 0.5 = 0.5%")
     tabs = st.tabs([t[1] for t in specs])
     for tab, (key, title, help_text, fixed, locked) in zip(tabs, specs):
@@ -156,7 +163,7 @@ with st.container(border=True, key="card_rates"):
                 if "(%)" in c or "% ของ" in c:
                     colcfg[c] = st.column_config.NumberColumn(c, format="%.3f", min_value=0.0)
                 elif "(บาท)" in c:
-                    colcfg[c] = st.column_config.NumberColumn(c, format="localized", min_value=0.0)
+                    colcfg[c] = st.column_config.NumberColumn(c, format=MONEY_FMT, min_value=0.0)
                 elif c == "เดือน (1-12)":
                     colcfg[c] = st.column_config.NumberColumn(c, min_value=1, max_value=12, step=1)
                 else:
@@ -167,7 +174,7 @@ with st.container(border=True, key="card_rates"):
 
 # ---------------------------------------------------------------- ไฟล์ยอดขาย
 eligible_rows = []
-with st.container(border=True, key="card_upload"):
+with st.container(border=False, key="card_upload"):
     theme.card_head("ไฟล์ยอดขาย", "ไฟล์จากระบบ (.txt / .csv / .xlsx) — ระบบซ่อนต้นทุนและ Margin ในไฟล์ผลลัพธ์")
     up_col, opt_col = st.columns([3, 1.2])
     with up_col:
@@ -230,7 +237,7 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
     for w in res["warnings"]:
         st.warning(w, icon="⚠️")
 
-    with st.container(border=True, key="card_result"):
+    with st.container(border=False, key="card_result"):
         h1, h2 = st.columns([3, 1.3], vertical_alignment="center")
         with h1:
             theme.card_head("ผลการคำนวณ", f"ปี {y} · ตามเดือน Invoice")
@@ -245,7 +252,7 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
             table.append({"Saleman": "Total", **{m: round(v, 2) for m, v in zip(core.MONTH_NAMES, res["col_total"])},
                           "Total": round(total, 2)})
             st.dataframe(table, hide_index=True, use_container_width=True,
-                         column_config={k: st.column_config.NumberColumn(format="localized")
+                         column_config={k: st.column_config.NumberColumn(format=MONEY_FMT)
                                         for k in core.MONTH_NAMES + ["Total"]})
         cnt, amt = Counter(), Counter()
         for d in detail:
@@ -254,7 +261,7 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
         with t2:
             st.dataframe([{"Commission Tier": tier_label(k), "แถว": v, "Commission (THB)": round(amt[k], 2)}
                           for k, v in cnt.most_common()], hide_index=True, use_container_width=True,
-                         column_config={"Commission (THB)": st.column_config.NumberColumn(format="localized")})
+                         column_config={"Commission (THB)": st.column_config.NumberColumn(format=MONEY_FMT)})
         with t3:
             opts = ["ทั้งหมด"] + [k for k, _ in cnt.most_common()]
             pick = st.radio("กรอง", opts, horizontal=True, label_visibility="collapsed",
@@ -268,8 +275,8 @@ if st.session_state.get("result") and st.session_state["result"][0] == code:
                 "ประเภท": d["out"].get("Type") or d["out"].get("Product Group"),
                 "Tier": tier_label(d["tier"]), "%": round(d["rate"] * 100, 3), "Commission": d["incentive"],
             } for d in rows[:1000]], hide_index=True, use_container_width=True, height=420,
-                column_config={"ยอดขาย": st.column_config.NumberColumn(format="localized"),
-                               "Commission": st.column_config.NumberColumn(format="localized"),
+                column_config={"ยอดขาย": st.column_config.NumberColumn(format=MONEY_FMT),
+                               "Commission": st.column_config.NumberColumn(format=MONEY_FMT),
                                "%": st.column_config.NumberColumn(format="%.3f")})
             if len(rows) > 1000:
                 st.caption(f"แสดง 1,000 จาก {len(rows):,} แถว — ดูทั้งหมดในไฟล์ Excel")
